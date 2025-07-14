@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Financeiro</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; margin: 0; background-color: #f4f7f6; color: #333; }
+        .container { max-width: 1200px; margin: 2em auto; padding: 0 1em; }
+        .card { background-color: white; border-radius: 8px; padding: 1.5em; margin-bottom: 1.5em; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5em; }
+        .kpi { text-align: center; }
+        .kpi .label { font-size: 0.9em; color: #666; }
+        .kpi .value { font-size: 1.8em; font-weight: bold; color: #1a237e; }
+        .kpi .value.lucro-pos { color: #2e7d32; }
+        .kpi .value.lucro-neg { color: #c62828; }
+        h1, h2 { color: #1a237e; }
+        .messages { list-style: none; padding: 0; margin-bottom: 1em; }
+        .messages li { padding: 12px; border-radius: 5px; margin-bottom: 0.5em; }
+        .messages .success { background-color: #d4edda; color: #155724; }
+        .messages .error { background-color: #f8d7da; color: #721c24; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Dashboard Financeiro</h1>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <ul class="messages">
+                {% for category, message in messages %}
+                    <li class="{{ category }}">{{ message }}</li>
+                {% endfor %}
+                </ul>
+            {% endif %}
+        {% endwith %}
+
+        <div class="card">
+            <form action="{{ url_for('upload_file') }}" method="post" enctype="multipart/form-data" style="display: flex; gap: 1em; align-items: center;">
+                <label for="file-upload"><strong>Adicionar Relatório:</strong></label>
+                <input type="file" name="file" id="file-upload" accept=".xlsx" required>
+                <button type="submit" style="padding: 8px 15px; background-color: #1a237e; color: white; border: none; border-radius: 5px; cursor: pointer;">Enviar</button>
+            </form>
+        </div>
+
+        {% if meses_disponiveis %}
+        <div class="card">
+            <form action="{{ url_for('dashboard') }}" method="get" style="display: flex; gap: 1em; align-items: center;">
+                <label for="mes-select"><strong>Ver Relatório Individual:</strong></label>
+                <select name="mes" id="mes-select" onchange="this.form.submit()">
+                    {% for mes_row in meses_disponiveis %}
+                        <option value="{{ mes_row['mes'] }}" {% if dados and mes_row['mes'] == dados.mes %}selected{% endif %}>
+                            {{ datetime.strptime(mes_row['mes'], '%Y-%m').strftime('%B de %Y') }}
+                        </option>
+                    {% endfor %}
+                </select>
+                <noscript><button type="submit" style="padding: 8px 15px; background-color: #2e7d32; color: white; border: none; border-radius: 5px; cursor: pointer;">Visualizar</button></noscript>
+            </form>
+        </div>
+        {% endif %}
+
+        {% if dados %}
+        <div class="card">
+            <h2>Análise do Relatório: {{ dados.mes_formatado }}</h2>
+            
+            <div class="kpi-grid" style="margin-top: 2em;">
+                <div class="kpi">
+                    <div class="label">Total de Receitas</div>
+                    <div class="value">R$ {{ "%.2f"|format(dados.total_receitas)|replace('.', ',') }}</div>
+                </div>
+                <div class="kpi">
+                    <div class="label">Total de Despesas</div>
+                    <div class="value">R$ {{ "%.2f"|format(dados.total_despesas)|replace('.', ',') }}</div>
+                </div>
+                <div class="kpi">
+                    <div class="label">Total de Honorários</div>
+                    <div class="value">R$ {{ "%.2f"|format(dados.total_honorarios)|replace('.', ',') }}</div>
+                </div>
+                <div class="kpi">
+                    <div class="label">Lucro Líquido</div>
+                    <div class="value {{ 'lucro-pos' if dados.lucro_liquido >= 0 else 'lucro-neg' }}">R$ {{ "%.2f"|format(dados.lucro_liquido)|replace('.', ',') }}</div>
+                </div>
+                <div class="kpi">
+                    <div class="label">Margem de Lucro</div>
+                    <div class="value {{ 'lucro-pos' if dados.margem_lucro >= 0 else 'lucro-neg' }}">{{ "%.2f"|format(dados.margem_lucro)|replace('.', ',') }}%</div>
+                </div>
+            </div>
+
+            <div style="margin-top: 2em; max-width: 800px; margin-left: auto; margin-right: auto;">
+                <canvas id="financeiroChart"></canvas>
+            </div>
+            
+            <script>
+                document.addEventListener('DOMContentLoaded', function() {
+                    const canvas = document.getElementById('financeiroChart');
+                    if (canvas && typeof Chart !== 'undefined' && {{ dados | tojson }} ) {
+                        const ctx = canvas.getContext('2d');
+                        const chartDataFromPython = {{ dados.chart_data | tojson }};
+
+                        new Chart(ctx, {
+                            type: 'bar',
+                            data: chartDataFromPython,
+                            options: {
+                                responsive: true,
+                                scales: { 
+                                    y: { 
+                                        beginAtZero: true 
+                                    } 
+                                },
+                                plugins: {
+                                    title: {
+                                        display: true,
+                                        text: 'Análise Financeira do Mês'
+                                    },
+                                    legend: {
+                                        display: false
+                                    }
+                                }
+                            }
+                        });
+                    }
+                });
+            </script>
+        </div>
+        
+        {% else %}
+            <div class="card" style="text-align: center;">
+                <p>Nenhum relatório foi processado ainda. Adicione um arquivo para começar.</p>
+            </div>
+        {% endif %}
+    </div>
+</body>
+</html>
