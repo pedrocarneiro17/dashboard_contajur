@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Comparativo Mensal</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .chart-container { position: relative; height: 50vh; width: 100%; }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans p-8">
+
+    <div class="container mx-auto">
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold text-gray-800">Análise Comparativa</h1>
+            <a href="{{ url_for('dashboard') }}" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">
+                &larr; Voltar ao Dashboard
+            </a>
+        </div>
+        <p class="text-xl text-gray-600 mb-8">Comparando os meses: <span class="font-semibold">{{ selected_months|join(', ') }}</span></p>
+
+        <div class="bg-white p-6 rounded-lg shadow-md mb-8">
+            <h2 class="text-xl font-semibold text-gray-700 mb-4">Evolução de Receitas, Despesas e Lucro</h2>
+            <div class="chart-container">
+                <canvas id="totalsLineChart"></canvas>
+            </div>
+        </div>
+
+        <div class="bg-white p-6 rounded-lg shadow-md">
+            <h2 class="text-xl font-semibold text-gray-700 mb-4">Comparativo de Despesas por Categoria</h2>
+            <div class="chart-container">
+                <canvas id="categoriesBarChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const totalsData = {{ totals_comparison | tojson | safe }};
+    const categoryData = {{ category_comparison | tojson | safe }};
+    const chartColors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#6366F1', '#D946EF', '#06B6D4', '#F97316', '#EC4899'];
+    const formatCurrency = (value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+    // --- Gráfico 1: Linhas de Totais ---
+    const totalsCtx = document.getElementById('totalsLineChart');
+    if (totalsCtx) {
+        new Chart(totalsCtx.getContext('2d'), {
+            type: 'line',
+            data: totalsData,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { ticks: { callback: (value) => formatCurrency(value) } }
+                },
+                plugins: {
+                    legend: { position: 'top' },
+                    tooltip: { callbacks: { label: (context) => `${context.dataset.label}: ${formatCurrency(context.raw)}` } }
+                }
+            }
+        });
+    }
+
+    // --- Gráfico 2: Barras Agrupadas de Categorias ---
+    const categoriesCtx = document.getElementById('categoriesBarChart');
+    if (categoriesCtx) {
+        // Atribui cores aos datasets de categorias
+        categoryData.datasets.forEach((dataset, index) => {
+            dataset.backgroundColor = chartColors[index % chartColors.length];
+        });
+
+        new Chart(categoriesCtx.getContext('2d'), {
+            type: 'bar',
+            data: categoryData,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { ticks: { callback: (value) => formatCurrency(value) } }
+                },
+                plugins: {
+                    legend: { position: 'top' },
+                    tooltip: { callbacks: { label: (context) => `${context.dataset.label}: ${formatCurrency(context.raw)}` } }
+                }
+            }
+        });
+    }
+});
+</script>
+</body>
+</html>

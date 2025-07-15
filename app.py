@@ -1,167 +1,217 @@
+from flask import Flask, request, render_template, redirect, url_for
+import pandas as pd
+import sqlite3
+from datetime import datetime
 import os
 import re
-import sqlite3
-import pandas as pd
-from flask import Flask, render_template, request, redirect, url_for, flash
-import requests
-import json
-from datetime import datetime
+from werkzeug.utils import secure_filename
+from collections import defaultdict
 
-# ⭐ 1. IMPORTAR O MÓDULO LOCALE
-import locale
-
-# ⭐ 2. CONFIGURAR O LOCALE PARA PORTUGUÊS DO BRASIL
-# Isso fará com que strftime('%B') retorne "janeiro", "fevereiro", etc.
-try:
-    locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')
-except locale.Error:
-    print("Locale pt_BR.UTF-8 não encontrado. Usando o locale padrão.")
-    # Se o locale não estiver instalado, a aplicação continuará funcionando em inglês.
-
-# --- Configuração da Aplicação ---
+# ... (o início do app.py, init_db, process_excel, etc., continuam iguais) ...
 app = Flask(__name__)
-app.secret_key = 'sua_chave_secreta_aqui'
-DATABASE = 'financeiro.db'
-API_KEY = "AIzaSyA0hJdqhpW0cyaZ6K_ezA82lTMJWOiRO44"
+app.config['UPLOAD_FOLDER'] = 'Uploads'
+app.config['ALLOWED_EXTENSIONS'] = {'xlsx'}
 
-@app.context_processor
-def inject_datetime():
-    return {'datetime': datetime}
+pd.set_option('future.no_silent_downcasting', True)
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# --- Funções de Banco de Dados e Utilitários ---
-def get_db():
-    db = sqlite3.connect(DATABASE)
-    db.row_factory = sqlite3.Row
-    return db
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
-def extrair_mes_ano_do_nome(filename):
-    match = re.search(r'(\d{4})-(\d{2})', filename)
-    if match:
-        return f"{match.group(1)}-{match.group(2)}"
-    return None
-
-# --- Processamento Principal com IA ---
-def processar_com_ia_e_salvar(filepath, filename):
-    # (Esta função permanece exatamente a mesma da versão anterior)
-    if not API_KEY:
-        flash("ERRO GRAVE: A chave da API do Gemini não está configurada.", 'error')
-        return False
-    try:
-        df = pd.read_excel(filepath, header=None, engine='openpyxl')
-        conteudo_texto = df.to_string()
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
-        prompt = f"""
-        Analise o conteúdo da planilha.
-        1. Encontre o período do relatório, como "período de 01/06/2025 à 30/06/2025", e extraia o mês e ano. Retorne no formato "AAAA-MM".
-        2. Extraia o total de "RECEITAS".
-        3. Extraia o total de "DESPESAS".
-        4. Extraia a soma de "Honorários", "Honorários CEI" e "Honorários Doméstica".
-        Responda APENAS com um JSON no seguinte formato:
-        {{"mes": "AAAA-MM", "receitas": VALOR, "despesas": VALOR, "honorarios": VALOR}}
-        Use ponto para decimais. Se não encontrar o período, retorne "mes": null.
-        --- DADOS ---
-        {conteudo_texto}
-        """
-        payload = {"contents": [{"parts": [{"text": prompt}]}]}
-        headers = {'Content-Type': 'application/json'}
-        response = requests.post(url, headers=headers, data=json.dumps(payload))
-        if response.status_code != 200:
-            error_data = response.json()
-            error_message = error_data.get('error', {}).get('message', 'Erro da API.')
-            flash(f"Erro da API Gemini: {error_message}", 'error')
-            return False
-        response_data = response.json()
-        json_text = response_data['candidates'][0]['content']['parts'][0]['text'].strip().replace("```json", "").replace("```", "")
-        dados_extraidos = json.loads(json_text)
-        mes_ia = dados_extraidos.get("mes")
-        if mes_ia:
-            mes_arquivo = mes_ia
-        else:
-            mes_arquivo = extrair_mes_ano_do_nome(filename)
-            if not mes_arquivo:
-                flash('Mês não encontrado no conteúdo da planilha nem no nome do arquivo.', 'error')
-                return False
-        receitas = pd.to_numeric(dados_extraidos.get("receitas"), errors='coerce')
-        despesas = pd.to_numeric(dados_extraidos.get("despesas"), errors='coerce')
-        honorarios = pd.to_numeric(dados_extraidos.get("honorarios"), errors='coerce')
-        if any(pd.isna([receitas, despesas, honorarios])):
-            flash("A IA não retornou todos os valores financeiros necessários.", 'error')
-            return False
-        db = get_db()
-        db.execute('DELETE FROM relatorios_mensais WHERE mes = ?', (mes_arquivo,))
-        db.execute(
-            'INSERT INTO relatorios_mensais (mes, total_receitas, total_despesas, total_honorarios) VALUES (?, ?, ?, ?)',
-            (mes_arquivo, receitas, despesas, honorarios)
-        )
-        db.commit()
-        db.close()
-        flash(f'Relatório de {mes_arquivo} processado com sucesso!', 'success')
-        return True
-    except Exception as e:
-        print(f"Erro no processamento: {e}")
-        flash(f"Ocorreu um erro: {e}", 'error')
-        return False
-
-# --- Rotas da Aplicação ---
-@app.route('/')
-def dashboard():
-    # (Esta função permanece exatamente a mesma da versão anterior)
-    db = get_db()
-    meses_disponiveis = db.execute('SELECT mes FROM relatorios_mensais ORDER BY mes DESC').fetchall()
-    mes_selecionado = request.args.get('mes', None)
-    dados_db = None
-    if mes_selecionado:
-        dados_db = db.execute('SELECT * FROM relatorios_mensais WHERE mes = ?', (mes_selecionado,)).fetchone()
-    elif meses_disponiveis:
-        dados_db = db.execute('SELECT * FROM relatorios_mensais ORDER BY mes DESC LIMIT 1').fetchone()
-    db.close()
-    dados_dashboard = None
-    if dados_db:
-        lucro = dados_db['total_receitas'] - dados_db['total_despesas']
-        margem = (lucro / dados_db['total_receitas']) * 100 if dados_db['total_receitas'] > 0 else 0
-        chart_data = {
-            "labels": ['Receitas', 'Despesas', 'Honorários'],
-            "datasets": [{"label": 'Valores em R$', "data": [dados_db['total_receitas'], dados_db['total_despesas'], dados_db['total_honorarios']], "backgroundColor": ['rgba(75, 192, 192, 0.6)', 'rgba(255, 99, 132, 0.6)', 'rgba(255, 206, 86, 0.6)'], "borderColor": ['rgba(75, 192, 192, 1)', 'rgba(255, 99, 132, 1)', 'rgba(255, 206, 86, 1)'], "borderWidth": 1}]
-        }
-        dados_dashboard = {
-            "mes": dados_db['mes'], "mes_formatado": datetime.strptime(dados_db['mes'], '%Y-%m').strftime('%B de %Y').capitalize(), "total_receitas": dados_db['total_receitas'], "total_despesas": dados_db['total_despesas'], "total_honorarios": dados_db['total_honorarios'], "lucro_liquido": lucro, "margem_lucro": margem, "chart_data": chart_data
-        }
-    return render_template('dashboard.html', dados=dados_dashboard, meses_disponiveis=meses_disponiveis)
-
-@app.route('/upload', methods=['POST'])
-def upload_file():
-    # (Esta função permanece exatamente a mesma da versão anterior)
-    file = request.files.get('file')
-    if not file or not file.filename:
-        flash('Nenhum arquivo selecionado.', 'error')
-        return redirect(url_for('dashboard'))
-    if file.filename.endswith('.xlsx'):
-        os.makedirs('uploads', exist_ok=True)
-        filepath = os.path.join('uploads', file.filename)
-        file.save(filepath)
-        processar_com_ia_e_salvar(filepath, file.filename)
-    else:
-        flash('Formato de arquivo inválido. Por favor, envie um arquivo .xlsx.', 'error')
-    return redirect(url_for('dashboard'))
-
-# --- Inicialização ---
 def init_db():
-    with app.app_context():
-        db = get_db()
-        db.execute('''
-            CREATE TABLE IF NOT EXISTS relatorios_mensais (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                mes TEXT NOT NULL UNIQUE,
-                total_receitas REAL NOT NULL,
-                total_despesas REAL NOT NULL,
-                total_honorarios REAL NOT NULL
-            )
-        ''')
-        db.commit()
-        db.close()
+    with sqlite3.connect('expenses.db') as conn:
+        c = conn.cursor()
+        c.execute('''CREATE TABLE IF NOT EXISTS expenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            month TEXT,
+            category TEXT,
+            subcategory TEXT,
+            amount REAL
+        )''')
+        c.execute('''CREATE TABLE IF NOT EXISTS totals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            month TEXT UNIQUE,
+            total_revenue REAL,
+            total_expenses REAL,
+            total_fees REAL,
+            net_profit REAL,
+            profit_margin REAL
+        )''')
+        conn.commit()
+
+def process_excel(file_path):
+    # (A função process_excel continua a mesma da nossa última versão)
+    df_header = pd.read_excel(file_path, sheet_name='Página 1', nrows=1, header=None)
+    first_row = df_header.iloc[0, 0]
+    date_match = re.search(r'(\d{2}/\d{2}/\d{4})\s*à\s*(\d{2}/\d{2}/\d{4})', str(first_row))
+    if date_match:
+        start_date = date_match.group(1)
+        month = datetime.strptime(start_date, '%d/%m/%Y').strftime('%Y-%m')
+    else:
+        month = datetime.now().strftime('%Y-%m')
+    df = pd.read_excel(file_path, sheet_name='Página 1', skiprows=1)
+    try:
+        search_column = df.iloc[:, 10].astype(str).str.strip()
+        revenue_row_list = df.index[search_column == 'Receitas:'].tolist()
+        if not revenue_row_list:
+            raise ValueError("Não foi possível encontrar o texto 'Receitas:' na coluna K.")
+        revenue_row_index = revenue_row_list[0]
+        revenue_values = df.iloc[revenue_row_index, [11, 12]].replace('', 0).fillna(0)
+        total_revenue = float(pd.to_numeric(revenue_values, errors='coerce').sum())
+        expense_row_list = df.index[search_column == 'Despesas:'].tolist()
+        if not expense_row_list:
+            raise ValueError("Não foi possível encontrar o texto 'Despesas:' na coluna K.")
+        expense_row_index = expense_row_list[0]
+        expenses_values = df.iloc[expense_row_index, [11, 12]].replace('', 0).fillna(0)
+        total_expenses = float(pd.to_numeric(expenses_values, errors='coerce').sum())
+        if pd.isna(total_revenue) or pd.isna(total_expenses):
+            raise ValueError("Valores de totais não são numéricos nas colunas L e M da linha encontrada.")
+    except (IndexError, KeyError) as e:
+        raise ValueError(f"Erro ao processar o arquivo Excel: {e}. Verifique se a coluna K contém os textos 'Receitas:' e 'Despesas:'.")
+    honorarios = df[df['Descrição'].str.strip().isin(['Honorarios', 'Honorarios CEI', 'Honorarios Doméstica'])]['Total']
+    total_fees = float(honorarios.sum()) if not honorarios.empty else 0.0
+    net_profit = total_revenue - total_expenses
+    profit_margin = (net_profit / total_revenue * 100) if total_revenue > 0 else 0
+    categories = {
+        'Despesas com Colaboradores': ['Salários', 'Férias', 'Vale transporte', 'Vale alimentação', 'Plano de Saude', 'Plano Odontologico', 'Aniversário colaboradores', 'Mensalidade Personal', 'Mensalidade Rede Cidada', 'Seguro de vida', 'Feira, Mercado e outros', 'SST', 'Cursos e Palestras'],
+        'Despesas com Impostos': ['DAS - CONTAJUR', 'DARF CONTAJUR', 'FGTS - CONTAJUR'],
+        'Despesas de Escritório': ['Luz', 'Telefonia', 'Internet', 'Aluguel', 'Materiais de limpeza', 'Uniformes'],
+        'Mensalidades': ['Mensalidade de Sistema', 'Mensalidade T.I.', 'Mensalidade Marketing Digital', 'Mensalidade Revista Tecnica', 'Mensalidade Aluguel de Impressora', 'Mensalidade Associal Comercial', 'Segurança', 'Implantação Sistema'],
+        'Manutenção': ['Manutenção Contajur (pintura, reforma, etc.)', 'Manutenção Equipamentos e materiais', 'Material de escritório', 'Material de uso e consumo'],
+        'Outras Despesas': ['Tarifa Bancaria', 'Abertura,baixa e alteração JUCEMG - Cliente', 'Reembolso Certificado Digital', 'Outras despesas', 'Patrocínio/doações', 'Combustivel e Manutençao Motos']
+    }
+    with sqlite3.connect('expenses.db') as conn:
+        c = conn.cursor()
+        c.execute('DELETE FROM expenses WHERE month = ?', (month,))
+        c.execute('DELETE FROM totals WHERE month = ?', (month,))
+        c.execute('''INSERT OR REPLACE INTO totals (month, total_revenue, total_expenses, total_fees, net_profit, profit_margin)
+                      VALUES (?, ?, ?, ?, ?, ?)''', (month, total_revenue, total_expenses, total_fees, net_profit, profit_margin))
+        for category, subcategories in categories.items():
+            rows = df.loc[df['Descrição'].str.strip().isin(subcategories)]
+            if not rows.empty:
+                for _, row in rows.iterrows():
+                    subcategory = row['Descrição']
+                    amount_value = pd.to_numeric(row['Total'], errors='coerce')
+                    if pd.notna(amount_value):
+                        amount = float(amount_value)
+                        if amount != 0:
+                            c.execute('INSERT INTO expenses (month, category, subcategory, amount) VALUES (?, ?, ?, ?)',
+                                      (month, category, subcategory, amount))
+        conn.commit()
+    return month
+
+@app.route('/', methods=['GET', 'POST'])
+def dashboard():
+    error = None
+    # Lógica de Upload de Arquivo
+    if request.method == 'POST':
+        if 'file' not in request.files or request.files['file'].filename == '':
+            error = 'Nenhum arquivo selecionado'
+        else:
+            file = request.files['file']
+            if file and allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(file_path)
+                try:
+                    processed_month = process_excel(file_path)
+                    return redirect(url_for('dashboard', month=processed_month))
+                except ValueError as e:
+                    error = str(e)
+            else:
+                error = 'Extensão de arquivo não permitida. Use .xlsx'
+
+    # Lógica de Exibição de Dados
+    with sqlite3.connect('expenses.db') as conn:
+        conn.row_factory = sqlite3.Row  # Permite acessar colunas pelo nome
+        c = conn.cursor()
+        
+        c.execute('SELECT DISTINCT month FROM expenses ORDER BY month DESC')
+        all_months = [row['month'] for row in c.fetchall()]
+        
+        selected_month = request.args.get('month', all_months[0] if all_months else None)
+        
+        expenses = {}
+        totals = None
+        
+        if selected_month:
+            # Fetch expenses
+            c.execute('SELECT category, subcategory, amount FROM expenses WHERE month = ? ORDER BY category, subcategory', (selected_month,))
+            rows = c.fetchall()
+            for row in rows:
+                category = row['category']
+                if category not in expenses:
+                    expenses[category] = []
+                expenses[category].append({'subcategory': row['subcategory'], 'amount': row['amount']})
+            
+            # Fetch totals
+            c.execute('SELECT * FROM totals WHERE month = ?', (selected_month,))
+            totals_row = c.fetchone()
+            totals = dict(totals_row) if totals_row else None
+
+    return render_template('dashboard.html', 
+                           months=all_months, 
+                           selected_month=selected_month, 
+                           expenses=expenses, 
+                           totals=totals, 
+                           error=error)
+
+### NOVA ROTA DE COMPARAÇÃO ###
+@app.route('/compare')
+def compare():
+    selected_months = request.args.getlist('month')
+    if not selected_months or len(selected_months) < 2:
+        return redirect(url_for('dashboard'))
+
+    # Ordena os meses para os gráficos ficarem na ordem cronológica
+    selected_months.sort()
+    
+    with sqlite3.connect('expenses.db') as conn:
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+
+        # 1. Buscar dados da tabela 'totals'
+        placeholders = ','.join('?' for month in selected_months)
+        c.execute(f"SELECT * FROM totals WHERE month IN ({placeholders}) ORDER BY month", selected_months)
+        totals_data = c.fetchall()
+
+        # 2. Buscar e agregar despesas por categoria
+        c.execute(f"SELECT month, category, SUM(amount) as total FROM expenses WHERE month IN ({placeholders}) GROUP BY month, category ORDER BY month", selected_months)
+        expenses_data = c.fetchall()
+    
+    # 3. Preparar dados para os gráficos
+    # Dados para o gráfico de linhas (Receita, Despesa, Lucro)
+    totals_comparison = {
+        'labels': [row['month'] for row in totals_data],
+        'datasets': [
+            {'label': 'Total de Receitas', 'data': [row['total_revenue'] for row in totals_data], 'borderColor': '#10B981', 'tension': 0.1},
+            {'label': 'Total de Despesas', 'data': [row['total_expenses'] for row in totals_data], 'borderColor': '#EF4444', 'tension': 0.1},
+            {'label': 'Lucro Líquido', 'data': [row['net_profit'] for row in totals_data], 'borderColor': '#3B82F6', 'tension': 0.1},
+        ]
+    }
+
+    # Dados para o gráfico de barras (comparação de categorias)
+    # Estrutura: { 'Categoria': [valor_mes1, valor_mes2, ...], ... }
+    category_comparison_data = defaultdict(lambda: [0] * len(selected_months))
+    all_categories = sorted(list(set(row['category'] for row in expenses_data)))
+
+    for row in expenses_data:
+        month_index = selected_months.index(row['month'])
+        category_comparison_data[row['category']][month_index] = row['total']
+
+    category_comparison = {
+        'labels': selected_months,
+        'datasets': [{'label': cat, 'data': category_comparison_data[cat]} for cat in all_categories]
+    }
+    
+    return render_template('compare.html', 
+                           selected_months=selected_months,
+                           totals_comparison=totals_comparison,
+                           category_comparison=category_comparison)
+
+
+with app.app_context():
+    init_db()
 
 if __name__ == '__main__':
-    init_db()
-    if not API_KEY:
-        print("AVISO: A chave da API 'API_KEY' não está configurada.")
     app.run(debug=True)
