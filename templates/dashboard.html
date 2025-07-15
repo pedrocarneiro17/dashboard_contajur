@@ -67,19 +67,19 @@
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 <div class="bg-white p-6 rounded-xl shadow-lg flex flex-col justify-between">
                     <h3 class="text-sm font-semibold text-gray-500 uppercase">Receita Total</h3>
-                    <p class="text-3xl font-bold text-green-600 mt-2">R$ {{ "%.2f"|format(totals.total_revenue) }}</p>
+                    <p class="text-3xl font-bold text-green-600 mt-2">R$ <span class="money">{{ totals.total_revenue }}</span></p>
                 </div>
                 <div class="bg-white p-6 rounded-xl shadow-lg flex flex-col justify-between">
                     <h3 class="text-sm font-semibold text-gray-500 uppercase">Receita em Salários Mínimos</h3>
-                    <p class="text-3xl font-bold text-blue-600 mt-2">{{ "%.2f"|format(revenue_in_mw) }}</p>
+                    <p class="text-3xl font-bold text-blue-600 mt-2"><span class="money-count">{{ revenue_in_mw }}</span></p>
                 </div>
                 <div class="bg-white p-6 rounded-xl shadow-lg flex flex-col justify-between">
                     <h3 class="text-sm font-semibold text-gray-500 uppercase">Despesa Total</h3>
-                    <p class="text-3xl font-bold text-red-600 mt-2">R$ {{ "%.2f"|format(totals.total_expenses) }}</p>
+                    <p class="text-3xl font-bold text-red-600 mt-2">R$ <span class="money">{{ totals.total_expenses }}</span></p>
                 </div>
                 <div class="bg-white p-6 rounded-xl shadow-lg flex flex-col justify-between">
                     <h3 class="text-sm font-semibold text-gray-500 uppercase">Lucro Líquido</h3>
-                    <p class="text-3xl font-bold text-indigo-600 mt-2">R$ {{ "%.2f"|format(totals.net_profit) }}</p>
+                    <p class="text-3xl font-bold text-indigo-600 mt-2">R$ <span class="money">{{ totals.net_profit }}</span></p>
                 </div>
             </div>
 
@@ -116,7 +116,7 @@
                                     {% for item in items %}
                                         <tr class="hover:bg-gray-100">
                                             <td class="py-2 px-3 border-b border-gray-200">{{ item.subcategory }}</td>
-                                            <td class="py-2 px-3 border-b border-gray-200 text-right">{{ "%.2f"|format(item.amount) }}</td>
+                                            <td class="py-2 px-3 border-b border-gray-200 text-right money">{{ item.amount }}</td>
                                             <td class="py-2 px-3 border-b border-gray-200 text-right text-gray-600">{{ "%.2f"|format(item.percentage) }}%</td>
                                         </tr>
                                     {% endfor %}
@@ -136,7 +136,7 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', function () {
-            // Habilita/desabilita botão de comparar
+            // Lógica do botão de comparar
             const compareForm = document.getElementById('compareForm');
             if (compareForm) {
                 const checkboxes = document.querySelectorAll('input[name="month"][form="compareForm"]');
@@ -156,15 +156,26 @@
 
             if (!totals || !expenses) return; 
 
-            const chartColors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#6366F1', '#D946EF', '#06B6D4', '#F97316', '#EC4899'];
-            const formatCurrency = (value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+            // --- FUNÇÃO CENTRAL DE FORMATAÇÃO ---
+            const formatMoney = (value) => {
+                const number = Number(value) || 0;
+                return number.toLocaleString('pt-BR', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                });
+            };
 
-            // Plugin para texto no meio do gráfico Donut
+            // Formata todos os elementos HTML com a classe 'money' ou 'money-count'
+            document.querySelectorAll('.money').forEach(el => el.textContent = formatMoney(el.textContent));
+            document.querySelectorAll('.money-count').forEach(el => el.textContent = formatMoney(el.textContent));
+            
+            const chartColors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#6366F1', '#D946EF', '#06B6D4', '#F97316', '#EC4899'];
+
             const doughnutText = {
                 id: 'doughnutText',
                 beforeDraw: (chart) => {
                     if (chart.config.options.plugins.doughnutText?.display) {
-                        const { ctx, width, height } = chart;
+                        const { ctx } = chart;
                         const { text, font, color } = chart.config.options.plugins.doughnutText;
                         ctx.save();
                         const x = chart.getDatasetMeta(0).data[0].x;
@@ -180,52 +191,41 @@
             };
             Chart.register(doughnutText);
 
-            // Gráfico de Barras Horizontais - Top 10 Despesas
+            // Gráfico Top 10 - usando a nova formatação
             const top10Ctx = document.getElementById('top10ExpensesChart');
             if(top10Ctx && top10Data) {
                 new Chart(top10Ctx.getContext('2d'), {
                     type: 'bar',
-                    data: {
-                        labels: top10Data.labels,
-                        datasets: [{
-                            label: 'Valor Gasto',
-                            data: top10Data.data,
-                            backgroundColor: '#3B82F6'
-                        }]
-                    },
+                    data: { labels: top10Data.labels, datasets: [{ label: 'Valor Gasto', data: top10Data.data, backgroundColor: '#3B82F6' }] },
                     options: {
-                        indexAxis: 'y', // Isso faz o gráfico ser horizontal
-                        responsive: true,
-                        maintainAspectRatio: false,
+                        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
                         plugins: {
                             legend: { display: false },
-                            tooltip: { callbacks: { label: (context) => ` ${formatCurrency(context.raw)}` } }
+                            tooltip: { callbacks: { label: (context) => `R$ ${formatMoney(context.raw)}` } }
                         },
-                        scales: {
-                            x: { ticks: { callback: (value) => formatCurrency(value) } }
-                        }
+                        scales: { x: { ticks: { callback: (value) => `R$ ${formatMoney(value)}` } } }
                     }
                 });
             }
 
-            // Gráfico de Barras - Resumo Geral
+            // Gráfico Resumo Geral - usando a nova formatação
             const summaryCtx = document.getElementById('summaryChart');
             if (summaryCtx) {
                 new Chart(summaryCtx.getContext('2d'), {
                     type: 'bar',
-                    data: {
-                        labels: ['Receitas', 'Despesas', 'Lucro Líquido'],
-                        datasets: [{ data: [totals.total_revenue, totals.total_expenses, totals.net_profit], backgroundColor: ['#10B981', '#EF4444', '#3B82F6'] }]
-                    },
+                    data: { labels: ['Receitas', 'Despesas', 'Lucro Líquido'], datasets: [{ data: [totals.total_revenue, totals.total_expenses, totals.net_profit], backgroundColor: ['#10B981', '#EF4444', '#3B82F6'] }] },
                     options: {
                         responsive: true, maintainAspectRatio: false,
-                        plugins: { legend: { display: false } },
-                        scales: { y: { ticks: { callback: (value) => formatCurrency(value) } } }
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: { callbacks: { label: (context) => `R$ ${formatMoney(context.raw)}` } }
+                        },
+                        scales: { y: { ticks: { callback: (value) => `R$ ${formatMoney(value)}` } } }
                     }
                 });
             }
 
-            // Gráfico Donut - Despesas por Categoria
+            // Gráfico Despesas por Categoria
             const categoriesCtx = document.getElementById('categoriesChart');
             if (categoriesCtx) {
                 const categoryLabels = Object.keys(expenses);
@@ -233,11 +233,17 @@
                 new Chart(categoriesCtx.getContext('2d'), {
                     type: 'doughnut',
                     data: { labels: categoryLabels, datasets: [{ data: categoryData, backgroundColor: chartColors }] },
-                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'right' },
+                            tooltip: { callbacks: { label: (context) => `${context.label}: R$ ${formatMoney(context.raw)}` } }
+                        }
+                    }
                 });
             }
 
-            // Gráficos Donut - Detalhamento de cada Categoria
+            // Gráficos Detalhamento - usando a nova formatação
             Object.keys(expenses).forEach((category, index) => {
                 const canvasId = `expensesChart${index + 1}`;
                 const detailCtx = document.getElementById(canvasId);
@@ -246,7 +252,6 @@
                     const labels = items.map(item => item.subcategory);
                     const data = items.map(item => item.amount);
                     const totalAmount = data.reduce((sum, val) => sum + val, 0);
-
                     new Chart(detailCtx.getContext('2d'), {
                         type: 'doughnut',
                         data: { labels: labels, datasets: [{ data: data, backgroundColor: chartColors }] },
@@ -254,8 +259,8 @@
                             responsive: true, maintainAspectRatio: false,
                             plugins: {
                                 legend: { display: false },
-                                tooltip: { callbacks: { label: (context) => `${context.label}: ${formatCurrency(context.raw)}` } },
-                                doughnutText: { display: true, text: formatCurrency(totalAmount), font: 'bold 1.2rem sans-serif' }
+                                tooltip: { callbacks: { label: (context) => `${context.label}: R$ ${formatMoney(context.raw)}` } },
+                                doughnutText: { display: true, text: `R$ ${formatMoney(totalAmount)}`, font: 'bold 1.2rem sans-serif' }
                             }
                         }
                     });
