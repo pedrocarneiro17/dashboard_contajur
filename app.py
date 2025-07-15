@@ -7,6 +7,7 @@ import re
 from werkzeug.utils import secure_filename
 from collections import defaultdict
 
+# ... (o início do app.py, init_db, process_excel, etc., continuam iguais) ...
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'Uploads'
 app.config['ALLOWED_EXTENSIONS'] = {'xlsx'}
@@ -39,6 +40,7 @@ def init_db():
         conn.commit()
 
 def process_excel(file_path):
+    # (A função process_excel continua a mesma da nossa última versão)
     df_header = pd.read_excel(file_path, sheet_name='Página 1', nrows=1, header=None)
     first_row = df_header.iloc[0, 0]
     date_match = re.search(r'(\d{2}/\d{2}/\d{4})\s*à\s*(\d{2}/\d{2}/\d{4})', str(first_row))
@@ -47,40 +49,29 @@ def process_excel(file_path):
         month = datetime.strptime(start_date, '%d/%m/%Y').strftime('%Y-%m')
     else:
         month = datetime.now().strftime('%Y-%m')
-
     df = pd.read_excel(file_path, sheet_name='Página 1', skiprows=1)
-
-    DESC_COL_INDEX = 2
-    TOTAL_COL_INDEX = 6
-    
     try:
         search_column = df.iloc[:, 10].astype(str).str.strip()
         revenue_row_list = df.index[search_column == 'Receitas:'].tolist()
-        if not revenue_row_list: raise ValueError("Não foi possível encontrar o texto 'Receitas:' na coluna K.")
+        if not revenue_row_list:
+            raise ValueError("Não foi possível encontrar o texto 'Receitas:' na coluna K.")
         revenue_row_index = revenue_row_list[0]
         revenue_values = df.iloc[revenue_row_index, [11, 12]].replace('', 0).fillna(0)
         total_revenue = float(pd.to_numeric(revenue_values, errors='coerce').sum())
-        
         expense_row_list = df.index[search_column == 'Despesas:'].tolist()
-        if not expense_row_list: raise ValueError("Não foi possível encontrar o texto 'Despesas:' na coluna K.")
+        if not expense_row_list:
+            raise ValueError("Não foi possível encontrar o texto 'Despesas:' na coluna K.")
         expense_row_index = expense_row_list[0]
         expenses_values = df.iloc[expense_row_index, [11, 12]].replace('', 0).fillna(0)
         total_expenses = float(pd.to_numeric(expenses_values, errors='coerce').sum())
-        
-        if pd.isna(total_revenue) or pd.isna(total_expenses): raise ValueError("Valores de totais não são numéricos nas colunas L e M da linha encontrada.")
+        if pd.isna(total_revenue) or pd.isna(total_expenses):
+            raise ValueError("Valores de totais não são numéricos nas colunas L e M da linha encontrada.")
     except (IndexError, KeyError) as e:
         raise ValueError(f"Erro ao processar o arquivo Excel: {e}. Verifique se a coluna K contém os textos 'Receitas:' e 'Despesas:'.")
-
-    try:
-        desc_column_series = df.iloc[:, DESC_COL_INDEX].astype(str).str.strip()
-        honorarios_rows = df[desc_column_series.isin(['Honorarios', 'Honorarios CEI', 'Honorarios Doméstica'])]
-        total_fees = float(honorarios_rows.iloc[:, TOTAL_COL_INDEX].sum()) if not honorarios_rows.empty else 0.0
-    except IndexError:
-        raise ValueError(f"Erro ao buscar honorários. Verifique se os índices das colunas de descrição ({DESC_COL_INDEX}) e total ({TOTAL_COL_INDEX}) estão corretos.")
-
+    honorarios = df[df['Descrição'].str.strip().isin(['Honorarios', 'Honorarios CEI', 'Honorarios Doméstica'])]['Total']
+    total_fees = float(honorarios.sum()) if not honorarios.empty else 0.0
     net_profit = total_revenue - total_expenses
     profit_margin = (net_profit / total_revenue * 100) if total_revenue > 0 else 0
-
     categories = {
         'Despesas com Colaboradores': ['Salários', 'Férias', 'Vale transporte', 'Vale alimentação', 'Plano de Saude', 'Plano Odontologico', 'Aniversário colaboradores', 'Mensalidade Personal', 'Mensalidade Rede Cidada', 'Seguro de vida', 'Feira, Mercado e outros', 'SST', 'Cursos e Palestras'],
         'Despesas com Impostos': ['DAS - CONTAJUR', 'DARF CONTAJUR', 'FGTS - CONTAJUR'],
@@ -89,21 +80,18 @@ def process_excel(file_path):
         'Manutenção': ['Manutenção Contajur (pintura, reforma, etc.)', 'Manutenção Equipamentos e materiais', 'Material de escritório', 'Material de uso e consumo'],
         'Outras Despesas': ['Tarifa Bancaria', 'Abertura,baixa e alteração JUCEMG - Cliente', 'Reembolso Certificado Digital', 'Outras despesas', 'Patrocínio/doações', 'Combustivel e Manutençao Motos']
     }
-
     with sqlite3.connect('expenses.db') as conn:
         c = conn.cursor()
         c.execute('DELETE FROM expenses WHERE month = ?', (month,))
         c.execute('DELETE FROM totals WHERE month = ?', (month,))
         c.execute('''INSERT OR REPLACE INTO totals (month, total_revenue, total_expenses, total_fees, net_profit, profit_margin)
                       VALUES (?, ?, ?, ?, ?, ?)''', (month, total_revenue, total_expenses, total_fees, net_profit, profit_margin))
-        
-        desc_column_for_loop = df.iloc[:, DESC_COL_INDEX].astype(str).str.strip()
-        for category, subcategories_list in categories.items():
-            rows_filtered = df[desc_column_for_loop.isin(subcategories_list)]
-            if not rows_filtered.empty:
-                for index, row_data in rows_filtered.iterrows():
-                    subcategory = row_data.iloc[DESC_COL_INDEX]
-                    amount_value = pd.to_numeric(row_data.iloc[TOTAL_COL_INDEX], errors='coerce')
+        for category, subcategories in categories.items():
+            rows = df.loc[df['Descrição'].str.strip().isin(subcategories)]
+            if not rows.empty:
+                for _, row in rows.iterrows():
+                    subcategory = row['Descrição']
+                    amount_value = pd.to_numeric(row['Total'], errors='coerce')
                     if pd.notna(amount_value):
                         amount = float(amount_value)
                         if amount != 0:
@@ -112,14 +100,13 @@ def process_excel(file_path):
         conn.commit()
     return month
 
-# Dentro do seu app.py, substitua a função dashboard existente por esta:
-
+### ROTA DASHBOARD ATUALIZADA ###
+### ROTA DASHBOARD ATUALIZADA ###
 @app.route('/', methods=['GET', 'POST'])
 def dashboard():
     error = None
-    # Lógica de Upload de Arquivo (sem alterações)
+    # Lógica de Upload de Arquivo
     if request.method == 'POST':
-        # ... (código inalterado)
         if 'file' not in request.files or request.files['file'].filename == '':
             error = 'Nenhum arquivo selecionado'
         else:
@@ -136,11 +123,7 @@ def dashboard():
             else:
                 error = 'Extensão de arquivo não permitida. Use .xlsx'
 
-    # Lógica de Exibição de Dados com as novas funcionalidades
-    MINIMUM_WAGE = 1518.0
-    revenue_in_mw = 0
-    top_expenses_data = None  # Inicializa a nova variável
-    
+    # Lógica de Exibição de Dados
     with sqlite3.connect('expenses.db') as conn:
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
@@ -150,47 +133,50 @@ def dashboard():
         
         selected_month = request.args.get('month', all_months[0] if all_months else None)
         
-        expenses = {}
+        expenses = defaultdict(list)
         totals = None
+        category_totals = defaultdict(float)
+        # --- NOVAS VARIÁVEIS ---
+        revenue_in_mw = 0
+        top_10_chart_data = None
         
         if selected_month:
-            # Fetch totals (lógica inalterada)
+            # Fetch totals
             c.execute('SELECT * FROM totals WHERE month = ?', (selected_month,))
             totals_row = c.fetchone()
             if totals_row:
                 totals = dict(totals_row)
-                if totals['total_revenue'] > 0:
-                    revenue_in_mw = totals['total_revenue'] / MINIMUM_WAGE
+                # NOVO: Cálculo de salários mínimos
+                salario_minimo = 1518.0
+                if totals and totals['total_revenue'] > 0:
+                    revenue_in_mw = totals['total_revenue'] / salario_minimo
 
-            # Fetch all expenses for the month
-            c.execute('SELECT category, subcategory, amount FROM expenses WHERE month = ?', (selected_month,))
-            all_expense_rows = c.fetchall()
-            
-            # ### NOVO: Lógica para calcular o Top 10 Gastos ###
-            if all_expense_rows:
-                # Ordena todas as despesas pelo valor, do maior para o menor
-                sorted_expenses = sorted(all_expense_rows, key=lambda r: r['amount'], reverse=True)
-                # Pega os 10 primeiros
-                top_10_expenses = sorted_expenses[:10]
-                # Prepara os dados para o gráfico
-                top_expenses_data = {
-                    'labels': [row['subcategory'] for row in top_10_expenses],
-                    'data': [row['amount'] for row in top_10_expenses]
+            # NOVO: Fetch dados para o gráfico Top 10 Despesas
+            c.execute('SELECT subcategory, amount FROM expenses WHERE month = ? ORDER BY amount DESC LIMIT 10', (selected_month,))
+            top_10_expenses_rows = c.fetchall()
+            if top_10_expenses_rows:
+                top_10_chart_data = {
+                    'labels': [row['subcategory'] for row in top_10_expenses_rows],
+                    'data': [row['amount'] for row in top_10_expenses_rows]
                 }
+            
+            # Fetch all expenses for the month
+            c.execute('SELECT category, subcategory, amount FROM expenses WHERE month = ? ORDER BY category, amount DESC', (selected_month,))
+            rows = c.fetchall()
 
-            # Lógica de agrupamento por categoria (inalterada)
-            for row in all_expense_rows:
+            for row in rows:
+                category_totals[row['category']] += row['amount']
+            
+            for row in rows:
                 category = row['category']
-                if category not in expenses:
-                    expenses[category] = []
-                expenses[category].append({'subcategory': row['subcategory'], 'amount': row['amount']})
-
-            # Lógica de ordenação e percentual por categoria (inalterada)
-            for category, items in expenses.items():
-                category_total = sum(item['amount'] for item in items)
-                for item in items:
-                    item['percentage'] = (item['amount'] / category_total * 100) if category_total > 0 else 0
-                expenses[category] = sorted(items, key=lambda x: x['amount'], reverse=True)
+                amount = row['amount']
+                total_for_category = category_totals[category]
+                percentage = (amount / total_for_category * 100) if total_for_category > 0 else 0
+                expenses[category].append({
+                    'subcategory': row['subcategory'], 
+                    'amount': amount,
+                    'percentage': percentage
+                })
 
     return render_template('dashboard.html', 
                            months=all_months, 
@@ -198,23 +184,36 @@ def dashboard():
                            expenses=expenses, 
                            totals=totals, 
                            error=error,
+                           # --- PASSANDO AS NOVAS VARIÁVEIS PARA O TEMPLATE ---
                            revenue_in_mw=revenue_in_mw,
-                           top_expenses_data=top_expenses_data) # Envia os novos dados para a página
+                           top_10_chart_data=top_10_chart_data)
     
+### ROTA DE COMPARAÇÃO ATUALIZADA ###
 @app.route('/compare')
 def compare():
     selected_months = request.args.getlist('month')
     if not selected_months or len(selected_months) < 2:
         return redirect(url_for('dashboard'))
+
+    # Ordena os meses para os gráficos ficarem na ordem cronológica
     selected_months.sort()
+    
     with sqlite3.connect('expenses.db') as conn:
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
-        placeholders = ','.join('?' for month in selected_months)
+
+        placeholders = ','.join('?' for _ in selected_months)
+
+        # 1. Buscar dados da tabela 'totals'
         c.execute(f"SELECT * FROM totals WHERE month IN ({placeholders}) ORDER BY month", selected_months)
         totals_data = c.fetchall()
+
+        # 2. Buscar e agregar despesas por categoria
         c.execute(f"SELECT month, category, SUM(amount) as total FROM expenses WHERE month IN ({placeholders}) GROUP BY month, category ORDER BY month", selected_months)
         expenses_data = c.fetchall()
+    
+    # 3. Preparar dados para os gráficos
+    # Dados para o gráfico de linhas (Receita, Despesa, Lucro)
     totals_comparison = {
         'labels': [row['month'] for row in totals_data],
         'datasets': [
@@ -223,28 +222,60 @@ def compare():
             {'label': 'Lucro Líquido', 'data': [row['net_profit'] for row in totals_data], 'borderColor': '#3B82F6', 'tension': 0.1},
         ]
     }
+
+    # Dados para o gráfico de barras (comparação de categorias)
     category_comparison_data = defaultdict(lambda: [0] * len(selected_months))
-    all_categories = sorted(list(set(row['category'] for row in expenses_data)))
+    
+    # NOVO: Calcular o total de cada categoria nos meses selecionados para ordenação
+    category_totals_for_sorting = defaultdict(float)
+
     for row in expenses_data:
         month_index = selected_months.index(row['month'])
         category_comparison_data[row['category']][month_index] = row['total']
+        # Soma o total da categoria para usar na ordenação
+        category_totals_for_sorting[row['category']] += row['total']
+    
+    # NOVO: Ordenar as categorias pelo total geral (do maior para o menor)
+    sorted_categories = sorted(
+        category_totals_for_sorting.keys(), 
+        key=lambda cat: category_totals_for_sorting[cat], 
+        reverse=True
+    )
+    
     category_comparison = {
         'labels': selected_months,
-        'datasets': [{'label': cat, 'data': category_comparison_data[cat]} for cat in all_categories]
+        # Usa a lista de categorias já ordenada para criar os datasets
+        'datasets': [{'label': cat, 'data': category_comparison_data[cat]} for cat in sorted_categories]
     }
-    return render_template('compare.html', selected_months=selected_months, totals_comparison=totals_comparison, category_comparison=category_comparison)
+    
+    return render_template('compare.html', 
+                           selected_months=selected_months,
+                           totals_comparison=totals_comparison,
+                           category_comparison=category_comparison)
 
+# ... (A rota /delete e o final do arquivo continuam os mesmos) ...
 @app.route('/delete/<string:month>', methods=['POST'])
 def delete_month(month):
+    """
+    Exclui todos os dados de um mês específico das tabelas 'expenses' e 'totals'.
+    """
     try:
         with sqlite3.connect('expenses.db') as conn:
             c = conn.cursor()
+            
+            # Exclui da tabela de despesas
             c.execute('DELETE FROM expenses WHERE month = ?', (month,))
+            
+            # Exclui da tabela de totais
             c.execute('DELETE FROM totals WHERE month = ?', (month,))
+            
             conn.commit()
             print(f"Dados do mês {month} excluídos com sucesso.")
+            
     except Exception as e:
         print(f"Erro ao excluir o mês {month}: {e}")
+
+    # Redireciona de volta para o dashboard principal
     return redirect(url_for('dashboard'))
 
 with app.app_context():

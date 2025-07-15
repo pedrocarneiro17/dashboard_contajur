@@ -16,27 +16,26 @@
 
     <aside class="w-64 bg-gray-800 text-white p-6 flex flex-col">
         <h1 class="text-2xl font-bold mb-8 text-center">Análise Financeira</h1>
+
         <form method="post" action="{{ url_for('dashboard') }}" enctype="multipart/form-data" class="mb-8 border-b border-gray-700 pb-8">
             <label for="file-upload" class="block text-sm font-medium text-gray-300 mb-2">Enviar Relatório</label>
             <input type="file" name="file" id="file-upload" accept=".xlsx" class="block w-full text-sm text-gray-400 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 mb-2">
             <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Enviar</button>
         </form>
+
         <nav class="flex-grow">
             <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Relatórios Salvos</h2>
-            <ul class="space-y-1">
+            <ul>
                 {% for m in months %}
-                    <li class="flex items-center justify-between p-2 rounded-md hover:bg-gray-700">
-                        <input type="checkbox" name="month" value="{{ m }}" form="compareForm" id="cb-{{ loop.index }}"
-                               class="h-4 w-4 rounded bg-gray-600 border-gray-500 text-blue-500 focus:ring-blue-400 mr-3 cursor-pointer">
-                        
-                        <a href="{{ url_for('dashboard', month=m) }}" class="flex-grow {% if m == selected_month %}font-bold text-white{% else %}text-gray-300{% endif %}">
-                            <label for="cb-{{ loop.index }}" class="cursor-pointer w-full">{{ m }}</label>
-                        </a>
-                        
+                    <li class="my-1 flex items-center justify-between p-2 rounded-md hover:bg-gray-700">
+                        <label class="flex items-center flex-grow cursor-pointer">
+                            <input type="checkbox" name="month" value="{{ m }}" form="compareForm"
+                                   class="h-4 w-4 rounded bg-gray-600 border-gray-500 text-blue-500 focus:ring-blue-400 mr-3">
+                            <a href="{{ url_for('dashboard', month=m) }}" class="flex-grow {% if m == selected_month %}font-bold text-white{% else %}text-gray-300{% endif %}">{{ m }}</a>
+                        </label>
                         <form action="{{ url_for('delete_month', month=m) }}" method="post" class="ml-2" 
                               onsubmit="return confirm('Tem certeza que deseja excluir todos os dados do mês {{ m }}? Esta ação não pode ser desfeita.');">
-                            <button type="submit" class="text-gray-500 hover:text-red-500" title="Excluir mês">
-                                &#x1F5D1; </button>
+                            <button type="submit" class="text-gray-500 hover:text-red-500" title="Excluir mês">&#x1F5D1;</button>
                         </form>
                     </li>
                 {% else %}
@@ -54,47 +53,46 @@
         </nav>
     </aside>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            const form = document.getElementById('compareForm');
-            if (form) {
-                const checkboxes = document.querySelectorAll('input[name="month"][form="compareForm"]');
-                const compareButton = document.getElementById('compareButton');
-                const checkSelectedCount = () => {
-                    const checkedCount = Array.from(checkboxes).filter(i => i.checked).length;
-                    if(compareButton) { compareButton.disabled = checkedCount < 2; }
-                };
-                document.querySelector('aside nav').addEventListener('change', checkSelectedCount);
-                checkSelectedCount();
-            }
-        });
-    </script>
-
     <main class="p-8">
         {% if error %}
-            <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6" role="alert"><p class="font-bold">Erro no Upload</p><p>{{ error }}</p></div>
+            <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6" role="alert">
+                <p class="font-bold">Erro no Upload</p>
+                <p>{{ error }}</p>
+            </div>
         {% endif %}
 
         {% if selected_month and totals and expenses %}
-            <h1 class="text-3xl font-bold text-gray-800 mb-6">Dashboard de Resultados: {{ selected_month }}</h1>
+            <h1 class="text-3xl font-bold text-gray-800 mb-4">Dashboard de Resultados: {{ selected_month }}</h1>
             
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                <div class="bg-green-500 text-white p-6 rounded-lg shadow-lg"><h3 class="text-lg font-semibold">Receita Total</h3><p class="text-3xl font-bold">R$ {{ "%.2f"|format(totals.total_revenue) }}</p></div>
-                <div class="bg-blue-500 text-white p-6 rounded-lg shadow-lg"><h3 class="text-lg font-semibold">Salários Mínimos</h3><p class="text-3xl font-bold">{{ revenue_in_mw|round(1) }}</p><p class="text-sm opacity-80">(Base R$ 1.518,00)</p></div>
-                <div class="bg-red-500 text-white p-6 rounded-lg shadow-lg"><h3 class="text-lg font-semibold">Despesa Total</h3><p class="text-3xl font-bold">R$ {{ "%.2f"|format(totals.total_expenses) }}</p></div>
-                <div class="bg-yellow-500 text-white p-6 rounded-lg shadow-lg"><h3 class="text-lg font-semibold">Lucro Líquido</h3><p class="text-3xl font-bold">R$ {{ "%.2f"|format(totals.net_profit) }}</p></div>
+                <div class="bg-white p-6 rounded-xl shadow-lg flex flex-col justify-between">
+                    <h3 class="text-sm font-semibold text-gray-500 uppercase">Receita Total</h3>
+                    <p class="text-3xl font-bold text-green-600 mt-2">R$ {{ "%.2f"|format(totals.total_revenue) }}</p>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-lg flex flex-col justify-between">
+                    <h3 class="text-sm font-semibold text-gray-500 uppercase">Receita em Salários Mínimos</h3>
+                    <p class="text-3xl font-bold text-blue-600 mt-2">{{ "%.2f"|format(revenue_in_mw) }}</p>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-lg flex flex-col justify-between">
+                    <h3 class="text-sm font-semibold text-gray-500 uppercase">Despesa Total</h3>
+                    <p class="text-3xl font-bold text-red-600 mt-2">R$ {{ "%.2f"|format(totals.total_expenses) }}</p>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-lg flex flex-col justify-between">
+                    <h3 class="text-sm font-semibold text-gray-500 uppercase">Lucro Líquido</h3>
+                    <p class="text-3xl font-bold text-indigo-600 mt-2">R$ {{ "%.2f"|format(totals.net_profit) }}</p>
+                </div>
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
                 <div class="bg-white p-6 rounded-lg shadow-md"><h2 class="text-xl font-semibold text-gray-700 mb-4">Resumo Geral</h2><div class="chart-container"><canvas id="summaryChart"></canvas></div></div>
                 <div class="bg-white p-6 rounded-lg shadow-md"><h2 class="text-xl font-semibold text-gray-700 mb-4">Despesas por Categoria</h2><div class="chart-container"><canvas id="categoriesChart"></canvas></div></div>
             </div>
-
-            {% if top_expenses_data %}
+            
+            {% if top_10_chart_data %}
             <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-                <h2 class="text-xl font-semibold text-gray-700 mb-4">Top 10 Maiores Gastos (Subcategorias)</h2>
-                <div class="chart-container">
-                    <canvas id="topExpensesChart"></canvas>
+                <h2 class="text-xl font-semibold text-gray-700 mb-4">Top 10 Despesas do Mês</h2>
+                <div class="chart-container" style="height: 50vh;">
+                    <canvas id="top10ExpensesChart"></canvas>
                 </div>
             </div>
             {% endif %}
@@ -111,7 +109,7 @@
                                     <tr>
                                         <th class="py-2 px-3 bg-gray-200 font-bold uppercase text-sm text-gray-600 border-b">Subcategoria</th>
                                         <th class="py-2 px-3 bg-gray-200 font-bold uppercase text-sm text-gray-600 border-b text-right">Valor (R$)</th>
-                                        <th class="py-2 px-3 bg-gray-200 font-bold uppercase text-sm text-gray-600 border-b text-right">% do Total</th>
+                                        <th class="py-2 px-3 bg-gray-200 font-bold uppercase text-sm text-gray-600 border-b text-right">(%)</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -119,7 +117,7 @@
                                         <tr class="hover:bg-gray-100">
                                             <td class="py-2 px-3 border-b border-gray-200">{{ item.subcategory }}</td>
                                             <td class="py-2 px-3 border-b border-gray-200 text-right">{{ "%.2f"|format(item.amount) }}</td>
-                                            <td class="py-2 px-3 border-b border-gray-200 text-right font-medium text-gray-600">{{ "%.1f"|format(item.percentage) }}%</td>
+                                            <td class="py-2 px-3 border-b border-gray-200 text-right text-gray-600">{{ "%.2f"|format(item.percentage) }}%</td>
                                         </tr>
                                     {% endfor %}
                                 </tbody>
@@ -138,20 +136,35 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', function () {
+            // Habilita/desabilita botão de comparar
+            const compareForm = document.getElementById('compareForm');
+            if (compareForm) {
+                const checkboxes = document.querySelectorAll('input[name="month"][form="compareForm"]');
+                const compareButton = document.getElementById('compareButton');
+                const checkSelectedCount = () => {
+                    const checkedCount = Array.from(checkboxes).filter(i => i.checked).length;
+                    if(compareButton) { compareButton.disabled = checkedCount < 2; }
+                };
+                document.querySelector('aside').addEventListener('change', checkSelectedCount);
+                checkSelectedCount();
+            }
+
+            // Pega os dados do Flask
             const totals = {{ totals | tojson | safe }};
             const expenses = {{ expenses | tojson | safe }};
-            const topExpenses = {{ top_expenses_data | tojson | safe }};
+            const top10Data = {{ top_10_chart_data | tojson | safe }};
 
             if (!totals || !expenses) return; 
 
             const chartColors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#6366F1', '#D946EF', '#06B6D4', '#F97316', '#EC4899'];
             const formatCurrency = (value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+            // Plugin para texto no meio do gráfico Donut
             const doughnutText = {
                 id: 'doughnutText',
                 beforeDraw: (chart) => {
                     if (chart.config.options.plugins.doughnutText?.display) {
-                        const { ctx } = chart;
+                        const { ctx, width, height } = chart;
                         const { text, font, color } = chart.config.options.plugins.doughnutText;
                         ctx.save();
                         const x = chart.getDatasetMeta(0).data[0].x;
@@ -167,7 +180,35 @@
             };
             Chart.register(doughnutText);
 
-            // Gráfico 1: Resumo
+            // Gráfico de Barras Horizontais - Top 10 Despesas
+            const top10Ctx = document.getElementById('top10ExpensesChart');
+            if(top10Ctx && top10Data) {
+                new Chart(top10Ctx.getContext('2d'), {
+                    type: 'bar',
+                    data: {
+                        labels: top10Data.labels,
+                        datasets: [{
+                            label: 'Valor Gasto',
+                            data: top10Data.data,
+                            backgroundColor: '#3B82F6'
+                        }]
+                    },
+                    options: {
+                        indexAxis: 'y', // Isso faz o gráfico ser horizontal
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: { callbacks: { label: (context) => ` ${formatCurrency(context.raw)}` } }
+                        },
+                        scales: {
+                            x: { ticks: { callback: (value) => formatCurrency(value) } }
+                        }
+                    }
+                });
+            }
+
+            // Gráfico de Barras - Resumo Geral
             const summaryCtx = document.getElementById('summaryChart');
             if (summaryCtx) {
                 new Chart(summaryCtx.getContext('2d'), {
@@ -176,11 +217,15 @@
                         labels: ['Receitas', 'Despesas', 'Lucro Líquido'],
                         datasets: [{ data: [totals.total_revenue, totals.total_expenses, totals.net_profit], backgroundColor: ['#10B981', '#EF4444', '#3B82F6'] }]
                     },
-                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: (value) => formatCurrency(value) } } } }
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: { y: { ticks: { callback: (value) => formatCurrency(value) } } }
+                    }
                 });
             }
 
-            // Gráfico 2: Despesas por Categoria
+            // Gráfico Donut - Despesas por Categoria
             const categoriesCtx = document.getElementById('categoriesChart');
             if (categoriesCtx) {
                 const categoryLabels = Object.keys(expenses);
@@ -192,29 +237,7 @@
                 });
             }
 
-            // Gráfico 3: Top 7 Gastos
-            const topExpensesCtx = document.getElementById('topExpensesChart');
-            if (topExpensesCtx && topExpenses) {
-                new Chart(topExpensesCtx.getContext('2d'), {
-                    type: 'bar',
-                    data: {
-                        labels: topExpenses.labels,
-                        datasets: [{
-                            label: 'Valor Gasto', data: topExpenses.data, backgroundColor: '#6366F1', borderColor: '#4F46E5', borderWidth: 1
-                        }]
-                    },
-                    options: {
-                        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-                        plugins: {
-                            legend: { display: false },
-                            tooltip: { callbacks: { label: (context) => `Valor: ${formatCurrency(context.raw)}` } }
-                        },
-                        scales: { x: { beginAtZero: true, ticks: { callback: (value) => formatCurrency(value) } } }
-                    }
-                });
-            }
-
-            // Gráficos de Detalhamento
+            // Gráficos Donut - Detalhamento de cada Categoria
             Object.keys(expenses).forEach((category, index) => {
                 const canvasId = `expensesChart${index + 1}`;
                 const detailCtx = document.getElementById(canvasId);
@@ -223,6 +246,7 @@
                     const labels = items.map(item => item.subcategory);
                     const data = items.map(item => item.amount);
                     const totalAmount = data.reduce((sum, val) => sum + val, 0);
+
                     new Chart(detailCtx.getContext('2d'), {
                         type: 'doughnut',
                         data: { labels: labels, datasets: [{ data: data, backgroundColor: chartColors }] },
