@@ -212,6 +212,32 @@ def compare():
 
 with app.app_context():
     init_db()
+    
+# ADICIONE ESTA NOVA ROTA AO FINAL DO SEU ARQUIVO app.py
+
+@app.route('/delete/<string:month>', methods=['POST'])
+def delete_month(month):
+    """
+    Exclui todos os dados de um mês específico das tabelas 'expenses' e 'totals'.
+    """
+    try:
+        with sqlite3.connect('expenses.db') as conn:
+            c = conn.cursor()
+            
+            # Exclui da tabela de despesas
+            c.execute('DELETE FROM expenses WHERE month = ?', (month,))
+            
+            # Exclui da tabela de totais
+            c.execute('DELETE FROM totals WHERE month = ?', (month,))
+            
+            conn.commit()
+            print(f"Dados do mês {month} excluídos com sucesso.")
+            
+    except Exception as e:
+        print(f"Erro ao excluir o mês {month}: {e}")
+
+    # Redireciona de volta para o dashboard principal
+    return redirect(url_for('dashboard'))
 
 if __name__ == '__main__':
     app.run(debug=True)
