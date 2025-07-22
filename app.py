@@ -1,5 +1,3 @@
-# app.py
-
 from flask import Flask, request, render_template, redirect, url_for, flash
 import pandas as pd
 from datetime import datetime
@@ -7,19 +5,24 @@ import os
 import re
 from werkzeug.utils import secure_filename
 import database as db  # Importa nosso novo módulo de banco de dados
+from collections import defaultdict
 
 app = Flask(__name__)
-app.secret_key = 'sua-chave-secreta-super-segura' 
+app.secret_key = 'uma-chave-secreta-muito-forte' # Troque por uma chave segura
 app.config['UPLOAD_FOLDER'] = 'Uploads'
 app.config['ALLOWED_EXTENSIONS'] = {'xlsx'}
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+# --- INICIALIZAÇÃO DO BANCO DE DADOS ---
+# Esta função garante que o banco de dados seja criado assim que o app iniciar.
+with app.app_context():
+    db.init_db()
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
 def process_excel(file_path):
-    """Processa o arquivo Excel e prepara os dados para salvar no banco."""
-    # (A lógica de leitura do pandas e cálculos permanece a mesma)
+    # (A sua função process_excel continua aqui, sem alterações)
     try:
         df_header = pd.read_excel(file_path, sheet_name='Página 1', nrows=1, header=None)
         first_row = df_header.iloc[0, 0]
@@ -64,7 +67,7 @@ def process_excel(file_path):
     }
     
     expenses_data = []
-    categories = { # (definição das categorias continua a mesma) 
+    categories = {
         'Despesas com Colaboradores': ['Salários', 'Férias', 'Vale transporte', 'Vale alimentação', 'Plano de Saude', 'Plano Odontologico', 'Aniversário colaboradores', 'Mensalidade Personal', 'Mensalidade Rede Cidada', 'Seguro de vida', 'Feira, Mercado e outros', 'SST', 'Cursos e Palestras'],
         'Despesas com Impostos': ['DAS - CONTAJUR', 'DARF CONTAJUR', 'FGTS - CONTAJUR'],
         'Despesas de Escritório': ['Luz', 'Telefonia', 'Internet', 'Aluguel', 'Materiais de limpeza', 'Uniformes'],
@@ -86,10 +89,10 @@ def process_excel(file_path):
             person = row['Descrição'].replace('Retirada ', '').strip()
             withdrawals_data.append((month, person, float(amount), 'excel'))
 
-    # Chama a função do database.py para salvar tudo de uma vez
     db.save_processed_excel_data(month, totals_data, expenses_data, withdrawals_data)
     
     return month
+
 
 @app.route('/', methods=['GET', 'POST'])
 def dashboard():
@@ -120,7 +123,7 @@ def dashboard():
                            months=all_months, 
                            selected_month=selected_month, 
                            error=error,
-                           **dashboard_data) # Desempacota o dicionário no template
+                           **dashboard_data)
 
 @app.route('/add_withdrawal', methods=['POST'])
 def add_withdrawal():
@@ -144,7 +147,6 @@ def delete_withdrawal(withdrawal_id):
     else:
         flash(f'Erro: {message}', 'error')
     
-    # Redireciona de volta para a página de onde o usuário veio
     return redirect(request.referrer or url_for('dashboard'))
 
 @app.route('/delete/<string:month>', methods=['POST'])
@@ -156,8 +158,6 @@ def delete_month(month):
         flash(f"Erro ao excluir o mês {month}: {e}", 'error')
     return redirect(url_for('dashboard'))
 
-# Em app.py, substitua a função compare antiga por esta
-
 @app.route('/compare')
 def compare():
     selected_months = request.args.getlist('month')
@@ -167,14 +167,9 @@ def compare():
     
     selected_months.sort()
     
-    # Chama a nova função do database.py para buscar e processar os dados
     totals_comparison, category_comparison = db.get_compare_data(selected_months)
     
     return render_template('compare.html', 
                            selected_months=selected_months,
                            totals_comparison=totals_comparison,
                            category_comparison=category_comparison)
-
-if __name__ == '__main__':
-    db.init_db()  # Garante que o banco de dados e as tabelas sejam criados ao iniciar
-    app.run(debug=True)
