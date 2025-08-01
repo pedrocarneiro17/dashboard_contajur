@@ -56,8 +56,8 @@ def process_excel(file_path):
             person = row['Descrição'].replace('Retirada ', '').strip()
             if person in shares: shares[person] -= float(amount)
 
-    honorarios = df[df['Descrição'].str.strip().isin(['Honorarios', 'Honorarios CEI', 'Honorarios Doméstica'])]['Total']
-    total_fees = float(honorarios.sum()) if not honorarios.empty else 0.0
+    mask_honorarios = df['Descrição'].str.strip().str.startswith('Honorario', case=False, na=False)
+    total_fees = float(df.loc[mask_honorarios, 'Total'].sum())
 
     totals_data = {
         "month": month, "total_revenue": total_revenue, "total_expenses": total_expenses, 
