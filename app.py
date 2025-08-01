@@ -22,6 +22,7 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
 def process_excel(file_path):
+    # (A sua função process_excel continua aqui, sem alterações)
     try:
         df_header = pd.read_excel(file_path, sheet_name='Página 1', nrows=1, header=None)
         first_row = df_header.iloc[0, 0]
@@ -55,17 +56,8 @@ def process_excel(file_path):
             person = row['Descrição'].replace('Retirada ', '').strip()
             if person in shares: shares[person] -= float(amount)
 
-    # --- CÁLCULO DE HONORÁRIOS (VERSÃO FINAL SUPER ROBUSTA) ---
-    # Este método normaliza o texto (remove acentos, converte para minúsculas) antes de comparar.
-    # Garante que "Honorários", "honorario cei", "Honorário C." etc., sejam todos capturados.
-    # 1. Normaliza a coluna 'Descrição' para uma busca segura
-    desc_normalized = df['Descrição'].str.strip().str.lower().str.normalize('NFKD').str.encode('ascii', errors='ignore').str.decode('utf-8')
-    
-    # 2. Cria a máscara de busca na coluna normalizada
-    mask_honorarios = desc_normalized.str.startswith('honorario', na=False)
-
-    # 3. Soma os valores da coluna 'Total' original usando a máscara
-    total_fees = float(df.loc[mask_honorarios, 'Total'].sum())
+    honorarios = df[df['Descrição'].str.strip().isin(['Honorarios', 'Honorários CEI', 'Honorários Doméstica', 'Honorarios C.'])]['Total']
+    total_fees = float(honorarios.sum()) if not honorarios.empty else 0.0
 
     totals_data = {
         "month": month, "total_revenue": total_revenue, "total_expenses": total_expenses, 
@@ -100,6 +92,7 @@ def process_excel(file_path):
     db.save_processed_excel_data(month, totals_data, expenses_data, withdrawals_data)
     
     return month
+
 
 @app.route('/', methods=['GET', 'POST'])
 def dashboard():
