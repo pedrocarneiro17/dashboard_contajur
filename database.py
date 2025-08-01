@@ -88,7 +88,8 @@ def get_dashboard_data(selected_month):
     """Busca todos os dados necessários para renderizar o dashboard de um mês."""
     data = {
         "totals": None, "expenses": defaultdict(list), "revenue_in_mw": 0,
-        "top_10_chart_data": None, "withdrawals_list": []
+        "top_10_chart_data": None, "withdrawals_list": [], 
+        "fees_in_mw": 0
     }
     if not selected_month:
         return data
@@ -102,6 +103,9 @@ def get_dashboard_data(selected_month):
             data['totals'] = dict(totals_row)
             if data['totals'].get('total_revenue', 0) > 0:
                 data['revenue_in_mw'] = data['totals']['total_revenue'] / 1518.0
+
+        if data['totals'].get('total_fees', 0) > 0:
+            data['fees_in_mw'] = data['totals']['total_fees'] / 1518.0
 
         # Top 10 Despesas
         top_10_rows = c.execute('SELECT subcategory, amount FROM expenses WHERE month = ? ORDER BY amount DESC LIMIT 10', (selected_month,)).fetchall()
@@ -170,6 +174,7 @@ def get_compare_data(selected_months):
             {'label': 'Total de Receitas', 'data': [row['total_revenue'] for row in totals_data_rows], 'borderColor': '#10B981', 'tension': 0.1},
             {'label': 'Total de Despesas', 'data': [row['total_expenses'] for row in totals_data_rows], 'borderColor': '#EF4444', 'tension': 0.1},
             {'label': 'Lucro Líquido', 'data': [row['net_profit'] for row in totals_data_rows], 'borderColor': '#3B82F6', 'tension': 0.1},
+            {'label': 'Honorários', 'data': [row['total_fees'] for row in totals_data_rows], 'borderColor': '#F59E0B', 'tension': 0.1}
         ]
     }
 

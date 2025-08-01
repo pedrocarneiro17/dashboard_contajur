@@ -73,9 +73,10 @@
         {% if selected_month and totals %}
             <h1 class="text-3xl font-bold text-gray-800 mb-4">Dashboard de Resultados: {{ selected_month }}</h1>
             
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
                 <div class="bg-white p-6 rounded-xl shadow-lg"><h3 class="text-sm font-semibold text-gray-500 uppercase">Receita Total</h3><p class="text-3xl font-bold text-green-600 mt-2">R$ <span class="money">{{ totals.total_revenue }}</span></p></div>
                 <div class="bg-white p-6 rounded-xl shadow-lg"><h3 class="text-sm font-semibold text-gray-500 uppercase">Receita em Salários Mínimos</h3><p class="text-3xl font-bold text-blue-600 mt-2"><span class="money-count">{{ revenue_in_mw }}</span></p></div>
+                <div class="bg-white p-6 rounded-xl shadow-lg"><h3 class="text-sm font-semibold text-gray-500 uppercase">Hon. em Salários Mínimos</h3><p class="text-3xl font-bold text-blue-600 mt-2"><span class="money-count">{{ fees_in_mw }}</span></p></div>
                 <div class="bg-white p-6 rounded-xl shadow-lg"><h3 class="text-sm font-semibold text-gray-500 uppercase">Despesa Operacional</h3><p class="text-3xl font-bold text-red-600 mt-2">R$ <span class="money">{{ totals.total_expenses }}</span></p></div>
                 <div class="bg-white p-6 rounded-xl shadow-lg"><h3 class="text-sm font-semibold text-gray-500 uppercase">Lucro Líquido</h3><p class="text-3xl font-bold text-indigo-600 mt-2">R$ <span class="money">{{ totals.net_profit }}</span></p></div>
             </div>
@@ -265,8 +266,8 @@
             new Chart(document.getElementById('summaryChart').getContext('2d'), {
                 type: 'bar',
                 data: { 
-                    labels: ['Receitas', 'Despesas', 'Lucro Líquido'], 
-                    datasets: [{ data: [totals.total_revenue, totals.total_expenses, totals.net_profit], backgroundColor: ['#10B981', '#EF4444', '#3B82F6'] }] 
+                    labels: ['Receitas', 'Despesas', 'Lucro Líquido', 'Honorários'], 
+                    datasets: [{ data: [totals.total_revenue, totals.total_expenses, totals.net_profit, totals.total_fees], backgroundColor: ['#10B981', '#EF4444', '#3B82F6', '#F59E0B'] }] 
                 },
                 options: { 
                     responsive: true, 
