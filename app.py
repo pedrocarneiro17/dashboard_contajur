@@ -23,17 +23,14 @@ def allowed_file(filename):
 
 def process_excel(file_path):
     try:
-        # Lê o Excel pulando a primeira linha (cabeçalho)
-        df = pd.read_excel(file_path, sheet_name='Página 1', skiprows=1)
-        
-        # Extrai o mês do cabeçalho
+        # Lê o cabeçalho para extrair o mês
         df_header = pd.read_excel(file_path, sheet_name='Página 1', nrows=1, header=None)
         first_row = df_header.iloc[0, 0]
         date_match = re.search(r'(\d{2}/\d{2}/\d{4})\s*à\s*(\d{2}/\d{2}/\d{4})', str(first_row))
         month = datetime.strptime(date_match.group(1), '%d/%m/%Y').strftime('%Y-%m') if date_match else datetime.now().strftime('%Y-%m')
         
-        # Converte a coluna Descrição para string
-        df['Descrição'] = df['Descrição'].astype(str)
+        # Lê o Excel SEM pular linhas para acessar as linhas corretas
+        df = pd.read_excel(file_path, sheet_name='Página 1', header=None)
         
         # Função auxiliar para converter valores BR para float
         def convert_br_to_float(value):
@@ -42,7 +39,6 @@ def process_excel(file_path):
                 return 0.0
             if isinstance(value, (int, float)):
                 return float(value)
-            # Se for string, remove pontos e substitui vírgula por ponto
             value_str = str(value).strip()
             value_str = value_str.replace('.', '').replace(',', '.')
             try:
@@ -50,42 +46,39 @@ def process_excel(file_path):
             except:
                 return 0.0
         
-        # NOVA LÓGICA: Pega os totais diretamente das linhas 97 e 98
-        # Encontra a coluna 'Total' ou usa a última coluna numérica
-        if 'Total' in df.columns:
+        # Coluna M = índice 12 (A=0, B=1, C=2... M=12)
+        # Linha 97 = índice 96 (primeira linha é índice 0)
+        # Linha 98 = índice 97
+        total_revenue = convert_br_to_float(df.iloc[96, 12])  # Linha 97, Coluna M
+        total_expenses_raw = convert_br_to_float(df.iloc[97, 12])  # Linha 98, Coluna M
+        
+        # Agora lê novamente COM cabeçalho para processar despesas detalhadas
+        df_with_header = pd.read_excel(file_path, sheet_name='Página 1', skiprows=1)
+        df_with_header['Descrição'] = df_with_header['Descrição'].astype(str)
+        
+        # Encontra a coluna 'Total' para processar despesas detalhadas
+        if 'Total' in df_with_header.columns:
             total_col = 'Total'
         else:
-            # Procura pela última coluna que contém números
-            numeric_cols = df.select_dtypes(include=['number']).columns
-            if len(numeric_cols) > 0:
-                total_col = numeric_cols[-1]
-            else:
-                # Se não encontrar coluna numérica, usa a última coluna
-                total_col = df.columns[-1]
-        
-        # Linha 97 (índice 96 após skiprows=1) = Receitas
-        # Linha 98 (índice 97 após skiprows=1) = Despesas
-        total_revenue = convert_br_to_float(df.iloc[96, df.columns.get_loc(total_col)])
-        total_expenses_raw = convert_br_to_float(df.iloc[97, df.columns.get_loc(total_col)])
+            numeric_cols = df_with_header.select_dtypes(include=['number']).columns
+            total_col = numeric_cols[-1] if len(numeric_cols) > 0 else df_with_header.columns[-1]
         
     except Exception as e:
         raise ValueError(f"Erro ao ler os totais de Receita/Despesa do Excel. Detalhe: {e}")
 
-    # Cálculo de Honorários (mantém a lógica robusta)
-    desc_normalized = df['Descrição'].str.strip().str.lower().str.normalize('NFKD').str.encode('ascii', errors='ignore').str.decode('utf-8')
+    # Cálculo de Honorários
+    desc_normalized = df_with_header['Descrição'].str.strip().str.lower().str.normalize('NFKD').str.encode('ascii', errors='ignore').str.decode('utf-8')
     mask_honorarios = desc_normalized.str.startswith('honorario', na=False)
-    
-    # Aplica a conversão para cada valor da coluna Total
-    honorarios_values = df.loc[mask_honorarios, total_col].apply(convert_br_to_float)
+    honorarios_values = df_with_header.loc[mask_honorarios, total_col].apply(convert_br_to_float)
     total_fees = float(honorarios_values.sum())
 
-    # Cálculos de lucro (SEM considerar retiradas do Excel)
+    # Cálculos de lucro (SEM retiradas)
     total_expenses = total_expenses_raw
     profit_before_withdrawals = total_revenue - total_expenses
     net_profit = profit_before_withdrawals
     profit_margin = (net_profit / total_revenue * 100) if total_revenue > 0 else 0
 
-    # Distribuição inicial (sem retiradas do Excel)
+    # Distribuição inicial
     initial_profit_share = profit_before_withdrawals / 4.0
     shares = {
         'Lucas': initial_profit_share,
@@ -107,82 +100,93 @@ def process_excel(file_path):
         "share_reserva": shares['Reserva']
     }
     
-    # Categorização de despesas - AGRUPADAS EM UMA ÚNICA CATEGORIA
+    # Categorização de despesas com GRUPOS
     expenses_data = []
+    categories = {
+        'Despesas com Pessoal': [
+            'Salários',
+            '13° Salário',
+            'Férias',
+            'Vale transporte',
+            'Vale alimentação',
+            'Plano de Saude',
+            'Plano Odontologico',
+            'Aniversário colaboradores',
+            'Seguro de vida',
+            'Feira, Mercado e outros',
+            'SST',
+            'Cursos e Palestras'
+        ],
+        'Impostos e Encargos': [
+            'DAS - CONTAJUR',
+            'FGTS - CONTAJUR',
+            'DARF Previdenciário - Contajur'
+        ],
+        'Despesas de Escritório': [
+            'Luz',
+            'Telefonia',
+            'Internet',
+            'Aluguel',
+            'Materiais de limpeza',
+            'Uniformes',
+            'Material de escritório',
+            'Material de uso e consumo',
+            'Segurança'
+        ],
+        'Mensalidades e Serviços': [
+            'Mensalidade de Sistema',
+            'Mensalidade T.I.',
+            'Mensalidade Marketing Digital',
+            'Mensalidade Revista Tecnica',
+            'Mensalidade Aluguel de Impressora',
+            'Mensalidade Associal Comercial',
+            'Mensalidade Manutenção Web',
+            'Implantação Sistema',
+            'Mensalidade Personal',
+            'Mensalidade Rede Cidada'
+        ],
+        'Manutenção e Investimentos': [
+            'Manutenção Contajur (pintura, reforma, etc.)',
+            'Aquisição imóvel/construção',
+            'Combustivel e Manutençao Motos'
+        ],
+        'Reembolsos a Clientes': [
+            'DAS - Reembolso Imposto Federal - Cliente',
+            'Reembolso Imposto Estadual - Cliente',
+            'Reembolso Imposto Estadual ICMS - Cliente',
+            'GPS Autonomo - Reembolso Trabalhista- Cliente',
+            'Abertura,baixa e alteração JUCEMG - Cliente',
+            'Reembolso Certificado Digital',
+            'FGTS - Reembolso trabalhista - Cliente',
+            'Esocial - Reembolso trabalhista - Cliente',
+            'Contrib Sindical - Reembolso trabalhista - cliente',
+            'DARF - Retenção NF - Cliente',
+            'ISSQN - Cliente',
+            'DARF Previdenciário - Cliente',
+            'Carnê Leão - cliente',
+            'DAS Parcelamento - Reembolso de cliente'
+        ],
+        'Outras Despesas': [
+            'Outras despesas',
+            'Confraternização e Brindes fim de ano',
+            'Multa e Juros',
+            'Tarifa Bancaria'
+        ]
+    }
     
-    # Lista única de todas as despesas
-    all_expenses = [
-        'Salários',
-        '13° Salário',
-        'Férias',
-        'Vale transporte',
-        'Vale alimentação',
-        'Plano de Saude',
-        'FGTS - CONTAJUR',
-        'DARF Previdenciário - Contajur',
-        'Aniversário colaboradores',
-        'Plano Odontologico',
-        'Luz',
-        'Telefonia',
-        'Internet',
-        'Material de escritório',
-        'Material de uso e consumo',
-        'Segurança',
-        'Materiais de limpeza',
-        'Mensalidade Aluguel de Impressora',
-        'Mensalidade Revista Tecnica',
-        'Uniformes',
-        'Mensalidade Marketing Digital',
-        'Mensalidade T.I.',
-        'Implantação Sistema',
-        'Mensalidade de Sistema',
-        'Mensalidade Manutenção Web',
-        'Cursos e Palestras',
-        'Combustivel e Manutençao Motos',
-        'Mensalidade Personal',
-        'Mensalidade Rede Cidada',
-        'Mensalidade Associal Comercial',
-        'Aluguel',
-        'Outras despesas',
-        'Confraternização e Brindes fim de ano',
-        'Multa e Juros',
-        'SST',
-        'Feira, Mercado e outros',
-        'Seguro de vida',
-        'Manutenção Contajur (pintura, reforma, etc.)',
-        'Aquisição imóvel/construção',
-        'Tarifa Bancaria',
-        'DAS - Reembolso Imposto Federal - Cliente',
-        'Reembolso Imposto Estadual - Cliente',
-        'GPS Autonomo - Reembolso Trabalhista- Cliente',
-        'Abertura,baixa e alteração JUCEMG - Cliente',
-        'Reembolso Certificado Digital',
-        'FGTS - Reembolso trabalhista - Cliente',
-        'Esocial - Reembolso trabalhista - Cliente',
-        'Contrib Sindical - Reembolso trabalhista - cliente',
-        'Reembolso Imposto Estadual ICMS - Cliente',
-        'DARF - Retenção NF - Cliente',
-        'ISSQN - Cliente',
-        'DARF Previdenciário - Cliente',
-        'Carnê Leão - cliente',
-        'DAS Parcelamento - Reembolso de cliente',
-        'DAS - CONTAJUR'
-    ]
-    
-    # Processa todas as despesas em uma única categoria chamada "Despesas"
-    rows = df[df['Descrição'].str.strip().isin(all_expenses)]
-    for _, row in rows.iterrows():
-        amount = convert_br_to_float(row[total_col])
-        if amount != 0:
-            expenses_data.append((month, 'Despesas', row['Descrição'], float(amount)))
+    for category, subcategories in categories.items():
+        rows = df_with_header[df_with_header['Descrição'].str.strip().isin(subcategories)]
+        for _, row in rows.iterrows():
+            amount = convert_br_to_float(row[total_col])
+            if amount != 0:
+                expenses_data.append((month, category, row['Descrição'], float(amount)))
 
-    # NÃO há mais withdrawals_data do Excel - apenas salvamos lista vazia
+    # Sem retiradas do Excel
     withdrawals_data = []
 
     db.save_processed_excel_data(month, totals_data, expenses_data, withdrawals_data)
     
     return month
-
 @app.route('/', methods=['GET', 'POST'])
 def dashboard():
     error = None
