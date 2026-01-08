@@ -300,8 +300,23 @@
         }
 
         // Gráficos de Detalhamento de Despesas por Categoria
+        // CORREÇÃO: Usar ordem fixa ao invés de Object.keys()
         if (expenses) {
-            Object.keys(expenses).forEach((category, index) => {
+            // Define a ordem das categorias (MESMA ordem do Python)
+            const categoryOrder = [
+                'Despesas com Pessoal',
+                'Impostos e Encargos',
+                'Despesas de Escritório',
+                'Mensalidades e Serviços',
+                'Manutenção e Investimentos',
+                'Reembolsos a Clientes',
+                'Outras Despesas'
+            ];
+            
+            // Processa cada categoria NA ORDEM DEFINIDA
+            categoryOrder.forEach((category, index) => {
+                if (!expenses[category]) return; // Pula se a categoria não existir
+                
                 const canvasId = `expensesChart${index + 1}`;
                 const detailCtx = document.getElementById(canvasId);
                 if (detailCtx) {
@@ -329,4 +344,3 @@
     </script>
 </body>
 </html>
-    
