@@ -46,11 +46,11 @@ def process_excel(file_path):
             except:
                 return 0.0
         
-        # Coluna M = índice 12 (A=0, B=1, C=2... M=12)
-        # Linha 97 = índice 96 (primeira linha é índice 0)
-        # Linha 98 = índice 97
-        total_revenue = convert_br_to_float(df.iloc[96, 12])  # Linha 97, Coluna M
-        total_expenses_raw = convert_br_to_float(df.iloc[97, 12])  # Linha 98, Coluna M
+        # Coluna L = índice 11 (A=0, B=1, C=2... L=11)
+        # Linha 97 = índice 96 (primeira linha é índice 0) -> RECEITAS
+        # Linha 98 = índice 97 -> DESPESAS
+        total_revenue = convert_br_to_float(df.iloc[96, 11])  # Linha 97, Coluna L
+        total_expenses_raw = convert_br_to_float(df.iloc[97, 11])  # Linha 98, Coluna L
         
         # Agora lê novamente COM cabeçalho para processar despesas detalhadas
         df_with_header = pd.read_excel(file_path, sheet_name='Página 1', skiprows=1)
@@ -187,6 +187,7 @@ def process_excel(file_path):
     db.save_processed_excel_data(month, totals_data, expenses_data, withdrawals_data)
     
     return month
+
 @app.route('/', methods=['GET', 'POST'])
 def dashboard():
     error = None
