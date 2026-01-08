@@ -23,66 +23,108 @@ def allowed_file(filename):
 
 def process_excel(file_path):
     try:
+        # Lê o Excel pulando a primeira linha (cabeçalho)
+        df = pd.read_excel(file_path, sheet_name='Página 1', skiprows=1)
+        
+        # Extrai o mês do cabeçalho
         df_header = pd.read_excel(file_path, sheet_name='Página 1', nrows=1, header=None)
         first_row = df_header.iloc[0, 0]
         date_match = re.search(r'(\d{2}/\d{2}/\d{4})\s*à\s*(\d{2}/\d{2}/\d{4})', str(first_row))
         month = datetime.strptime(date_match.group(1), '%d/%m/%Y').strftime('%Y-%m') if date_match else datetime.now().strftime('%Y-%m')
         
-        df = pd.read_excel(file_path, sheet_name='Página 1', skiprows=1)
+        # Converte a coluna Descrição para string
         df['Descrição'] = df['Descrição'].astype(str)
         
-        search_column = df.iloc[:, 10].astype(str).str.strip()
-        total_revenue = float(pd.to_numeric(df.iloc[df.index[search_column == 'Receitas:'][0], [11, 12]], errors='coerce').sum())
-        grand_total_expenses_from_excel = float(pd.to_numeric(df.iloc[df.index[search_column == 'Despesas:'][0], [11, 12]], errors='coerce').sum())
+        # NOVA LÓGICA: Pega os totais diretamente das linhas 97 e 98
+        # Linha 97 (índice 96 após skiprows=1) = Receitas
+        # Linha 98 (índice 97 após skiprows=1) = Despesas
+        total_revenue = float(pd.to_numeric(df.iloc[96, df.columns.get_loc('Total')], errors='coerce'))
+        total_expenses_raw = float(pd.to_numeric(df.iloc[97, df.columns.get_loc('Total')], errors='coerce'))
+        
     except Exception as e:
         raise ValueError(f"Erro ao ler os totais de Receita/Despesa do Excel. Detalhe: {e}")
 
-    withdrawal_names = ['Retirada Lucas', 'Retirada Thiago', 'Retirada Ronaldo']
-    withdrawals_df = df[df['Descrição'].str.strip().isin(withdrawal_names)]
-    total_withdrawals_from_excel = float(pd.to_numeric(withdrawals_df['Total'], errors='coerce').fillna(0).sum())
+    # Cálculo de Honorários (mantém a lógica robusta)
+    desc_normalized = df['Descrição'].str.strip().str.lower().str.normalize('NFKD').str.encode('ascii', errors='ignore').str.decode('utf-8')
+    mask_honorarios = desc_normalized.str.startswith('honorario', na=False)
+    total_fees = float(df.loc[mask_honorarios, 'Total'].sum())
 
-    total_expenses = grand_total_expenses_from_excel - total_withdrawals_from_excel
+    # Cálculos de lucro (SEM considerar retiradas do Excel)
+    total_expenses = total_expenses_raw
     profit_before_withdrawals = total_revenue - total_expenses
     net_profit = profit_before_withdrawals
     profit_margin = (net_profit / total_revenue * 100) if total_revenue > 0 else 0
 
+    # Distribuição inicial (sem retiradas do Excel)
     initial_profit_share = profit_before_withdrawals / 4.0
-    shares = { 'Lucas': initial_profit_share, 'Thiago': initial_profit_share, 'Ronaldo': initial_profit_share, 'Reserva': initial_profit_share }
-    
-    for _, row in withdrawals_df.iterrows():
-        amount = pd.to_numeric(row['Total'], errors='coerce')
-        if pd.notna(amount) and amount != 0:
-            person = row['Descrição'].replace('Retirada ', '').strip()
-            if person in shares: shares[person] -= float(amount)
-
-    # --- CÁLCULO DE HONORÁRIOS (VERSÃO FINAL SUPER ROBUSTA) ---
-    # Este método normaliza o texto (remove acentos, converte para minúsculas) antes de comparar.
-    # Garante que "Honorários", "honorario cei", "Honorário C." etc., sejam todos capturados.
-    # 1. Normaliza a coluna 'Descrição' para uma busca segura
-    desc_normalized = df['Descrição'].str.strip().str.lower().str.normalize('NFKD').str.encode('ascii', errors='ignore').str.decode('utf-8')
-    
-    # 2. Cria a máscara de busca na coluna normalizada
-    mask_honorarios = desc_normalized.str.startswith('honorario', na=False)
-
-    # 3. Soma os valores da coluna 'Total' original usando a máscara
-    total_fees = float(df.loc[mask_honorarios, 'Total'].sum())
+    shares = {
+        'Lucas': initial_profit_share,
+        'Thiago': initial_profit_share,
+        'Ronaldo': initial_profit_share,
+        'Reserva': initial_profit_share
+    }
 
     totals_data = {
-        "month": month, "total_revenue": total_revenue, "total_expenses": total_expenses, 
-        "total_fees": total_fees, "net_profit": net_profit, "profit_margin": profit_margin,
-        "share_lucas": shares['Lucas'], "share_thiago": shares['Thiago'],
-        "share_ronaldo": shares['Ronaldo'], "share_reserva": shares['Reserva']
+        "month": month,
+        "total_revenue": total_revenue,
+        "total_expenses": total_expenses,
+        "total_fees": total_fees,
+        "net_profit": net_profit,
+        "profit_margin": profit_margin,
+        "share_lucas": shares['Lucas'],
+        "share_thiago": shares['Thiago'],
+        "share_ronaldo": shares['Ronaldo'],
+        "share_reserva": shares['Reserva']
     }
     
+    # Categorização de despesas (ATUALIZADA com a lista completa das imagens)
     expenses_data = []
     categories = {
-        'Despesas com Colaboradores': ['Salários', 'Férias', 'Vale transporte', 'Vale alimentação', 'Plano de Saude', 'Plano Odontologico', 'Aniversário colaboradores', 'Mensalidade Personal', 'Mensalidade Rede Cidada', 'Seguro de vida', 'Feira, Mercado e outros', 'SST', 'Cursos e Palestras'],
-        'Despesas com Impostos': ['DAS - CONTAJUR', 'DARF CONTAJUR', 'FGTS - CONTAJUR'],
-        'Despesas de Escritório': ['Luz', 'Telefonia', 'Internet', 'Aluguel', 'Materiais de limpeza', 'Uniformes'],
-        'Mensalidades': ['Mensalidade de Sistema', 'Mensalidade T.I.', 'Mensalidade Marketing Digital', 'Mensalidade Revista Tecnica', 'Mensalidade Aluguel de Impressora', 'Mensalidade Associal Comercial', 'Segurança', 'Implantação Sistema'],
-        'Manutenção': ['Manutenção Contajur (pintura, reforma, etc.)', 'Manutenção Equipamentos e materiais', 'Material de escritório', 'Material de uso e consumo'],
-        'Outras Despesas': ['Tarifa Bancaria', 'Abertura,baixa e alteração JUCEMG - Cliente', 'Reembolso Certificado Digital', 'Outras despesas', 'Patrocínio/doações', 'Combustivel e Manutençao Motos']
+        'Despesas com Colaboradores': [
+            'Salários', 'Férias', 'Vale transporte', 'Vale alimentação', 
+            'Plano de Saude', 'Plano Odontologico', 'Aniversário colaboradores',
+            'Mensalidade Personal', 'Mensalidade Rede Cidada', 'Seguro de vida',
+            'Feira, Mercado e outros', 'SST', 'Cursos e Palestras',
+            '13° Salário'
+        ],
+        'Despesas com Impostos': [
+            'DAS - CONTAJUR', 'DARF CONTAJUR', 'FGTS - CONTAJUR',
+            'DARF Previdenciário - Contajur'
+        ],
+        'Despesas de Escritório': [
+            'Luz', 'Telefonia', 'Internet', 'Aluguel',
+            'Materiais de limpeza', 'Uniformes'
+        ],
+        'Mensalidades': [
+            'Mensalidade de Sistema', 'Mensalidade T.I.',
+            'Mensalidade Marketing Digital', 'Mensalidade Revista Tecnica',
+            'Mensalidade Aluguel de Impressora', 'Mensalidade Associal Comercial',
+            'Segurança', 'Implantação Sistema', 'Mensalidade Rede Cidada',
+            'Mensalidade Personal', 'Mensalidade Manutenção Web'
+        ],
+        'Manutenção': [
+            'Manutenção Contajur (pintura, reforma, etc.)',
+            'Manutenção Equipamentos e materiais',
+            'Material de escritório', 'Material de uso e consumo'
+        ],
+        'Outras Despesas': [
+            'Tarifa Bancaria', 'Abertura,baixa e alteração JUCEMG - Cliente',
+            'Reembolso Certificado Digital', 'Outras despesas',
+            'Patrocínio/doações', 'Combustivel e Manutençao Motos',
+            'Aluguel', 'Contrapartida dos Brindes fim de ano',
+            'Adiantamento Imposto Estadual - Cliente',
+            'Tarifa Bancaria', 'Cafezinho', 'Açucar imobiliaria/frutaria',
+            'Reembolso Imposto Federal - Cliente',
+            'GPS Autonomo - Reembolso Trabalhista - Cliente',
+            'Abertura baixa e alteração JUCEMG - Cliente',
+            'Reembolso Certificado Digital',
+            'Escóla - Reembolso trabalhista - cliente',
+            'ISSQN - Cliente', 'DARF - Retenção NF - Cliente',
+            'Carn Lead - cliente',
+            'GPS Patronal - Cliente - Reembolso de cliente'
+        ]
     }
+    
     for category, subcategories in categories.items():
         rows = df[df['Descrição'].str.strip().isin(subcategories)]
         for _, row in rows.iterrows():
@@ -90,12 +132,8 @@ def process_excel(file_path):
             if pd.notna(amount) and amount != 0:
                 expenses_data.append((month, category, row['Descrição'], float(amount)))
 
+    # NÃO há mais withdrawals_data do Excel - apenas salvamos lista vazia
     withdrawals_data = []
-    for _, row in withdrawals_df.iterrows():
-        amount = pd.to_numeric(row['Total'], errors='coerce')
-        if pd.notna(amount) and amount != 0:
-            person = row['Descrição'].replace('Retirada ', '').strip()
-            withdrawals_data.append((month, person, float(amount), 'excel'))
 
     db.save_processed_excel_data(month, totals_data, expenses_data, withdrawals_data)
     
