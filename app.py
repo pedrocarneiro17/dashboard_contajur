@@ -99,7 +99,6 @@ def process_excel(file_path):
         "share_ronaldo": shares['Ronaldo'],
         "share_reserva": shares['Reserva']
     }
-    
     # Categorização de despesas com GRUPOS
     expenses_data = []
     categories = {
@@ -173,7 +172,7 @@ def process_excel(file_path):
             'Tarifa Bancaria'
         ]
     }
-    
+        
     for category, subcategories in categories.items():
         rows = df_with_header[df_with_header['Descrição'].str.strip().isin(subcategories)]
         for _, row in rows.iterrows():
