@@ -87,7 +87,7 @@ def delete_manual_withdrawal(withdrawal_id):
 def get_dashboard_data(selected_month):
     """Busca todos os dados necessários para renderizar o dashboard de um mês."""
     data = {
-        "totals": None, "expenses": defaultdict(list), "revenue_in_mw": 0,
+        "totals": None, "expenses": {}, "revenue_in_mw": 0,
         "top_10_chart_data": None, "withdrawals_list": [], 
         "fees_in_mw": 0
     }
@@ -115,19 +115,7 @@ def get_dashboard_data(selected_month):
                 'data': [row['amount'] for row in top_10_rows]
             }
         
-        # Despesas detalhadas com percentual - AGORA COM ORDEM DEFINIDA
-        expense_rows = c.execute('SELECT category, subcategory, amount FROM expenses WHERE month = ?', (selected_month,)).fetchall()
-        category_totals = defaultdict(float)
-        for row in expense_rows:
-            category_totals[row['category']] += row['amount']
-        
-        for row in expense_rows:
-            category, amount = row['category'], row['amount']
-            total = category_totals[category]
-            percentage = (amount / total * 100) if total > 0 else 0
-            data['expenses'][category].append({'subcategory': row['subcategory'], 'amount': amount, 'percentage': percentage})
-
-        # FORÇA A ORDEM DAS CATEGORIAS
+        # ORDEM FIXA DAS CATEGORIAS
         category_order = [
             'Despesas com Pessoal',
             'Impostos e Encargos',
@@ -138,13 +126,25 @@ def get_dashboard_data(selected_month):
             'Outras Despesas'
         ]
         
-        # Reorganiza o dicionário na ordem correta
-        ordered_expenses = {}
-        for cat in category_order:
-            if cat in data['expenses']:
-                ordered_expenses[cat] = data['expenses'][cat]
+        # Inicializa todas as categorias na ordem correta (mesmo vazias)
+        for category in category_order:
+            data['expenses'][category] = []
         
-        data['expenses'] = ordered_expenses
+        # Despesas detalhadas com percentual
+        expense_rows = c.execute('SELECT category, subcategory, amount FROM expenses WHERE month = ?', (selected_month,)).fetchall()
+        category_totals = defaultdict(float)
+        for row in expense_rows:
+            category_totals[row['category']] += row['amount']
+        
+        for row in expense_rows:
+            category, amount = row['category'], row['amount']
+            total = category_totals[category]
+            percentage = (amount / total * 100) if total > 0 else 0
+            if category in data['expenses']:  # Só adiciona se a categoria existir na ordem
+                data['expenses'][category].append({'subcategory': row['subcategory'], 'amount': amount, 'percentage': percentage})
+
+        # Remove categorias vazias
+        data['expenses'] = {k: v for k, v in data['expenses'].items() if v}
 
         # Lista de Retiradas
         data['withdrawals_list'] = c.execute('SELECT * FROM withdrawals WHERE month = ? ORDER BY timestamp DESC', (selected_month,)).fetchall()
