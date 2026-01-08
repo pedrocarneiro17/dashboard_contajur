@@ -102,7 +102,7 @@ def process_excel(file_path):
     # Categorização de despesas com GRUPOS
     expenses_data = []
     categories = {
-        'Despesas com Pessoal': [
+        'Despesas com Colaboradores': [
             'Salários',
             '13° Salário',
             'Férias',
