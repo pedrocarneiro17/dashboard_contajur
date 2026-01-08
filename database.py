@@ -107,8 +107,14 @@ def get_dashboard_data(selected_month):
         if data['totals'].get('total_fees', 0) > 0:
             data['fees_in_mw'] = data['totals']['total_fees'] / 1518.0
 
-        # Top 10 Despesas
-        top_10_rows = c.execute('SELECT subcategory, amount FROM expenses WHERE month = ? ORDER BY amount DESC LIMIT 10', (selected_month,)).fetchall()
+        # Top 10 Despesas - EXCLUINDO Reembolsos a Clientes
+        top_10_rows = c.execute('''
+            SELECT subcategory, amount 
+            FROM expenses 
+            WHERE month = ? AND category != 'Reembolsos a Clientes'
+            ORDER BY amount DESC 
+            LIMIT 10
+        ''', (selected_month,)).fetchall()
         if top_10_rows:
             data['top_10_chart_data'] = {
                 'labels': [row['subcategory'] for row in top_10_rows],
