@@ -29,7 +29,7 @@ def process_excel(file_path):
         date_match = re.search(r'(\d{2}/\d{2}/\d{4})\s*à\s*(\d{2}/\d{2}/\d{4})', str(first_row))
         month = datetime.strptime(date_match.group(1), '%d/%m/%Y').strftime('%Y-%m') if date_match else datetime.now().strftime('%Y-%m')
         
-        # Lê o Excel SEM pular linhas para acessar as linhas corretas
+        # Lê o Excel SEM pular linhas
         df = pd.read_excel(file_path, sheet_name='Página 1', header=None)
         
         # Função auxiliar para converter valores BR para float
@@ -46,11 +46,23 @@ def process_excel(file_path):
             except:
                 return 0.0
         
-        # Coluna L = índice 11 (A=0, B=1, C=2... L=11)
-        # Linha 97 = índice 96 (primeira linha é índice 0) -> RECEITAS
-        # Linha 98 = índice 97 -> DESPESAS
-        total_revenue = convert_br_to_float(df.iloc[96, 11])  # Linha 97, Coluna L
-        total_expenses_raw = convert_br_to_float(df.iloc[97, 11])  # Linha 98, Coluna L
+        # Procura por "Receitas:" e "Despesas:" na coluna 10 (índice 10)
+        coluna_busca = df.iloc[:, 10].astype(str).str.strip()
+        
+        # Encontra os índices das linhas que contêm "Receitas:" e "Despesas:"
+        idx_receitas = coluna_busca[coluna_busca == 'Receitas:'].index
+        idx_despesas = coluna_busca[coluna_busca == 'Despesas:'].index
+        
+        if len(idx_receitas) == 0 or len(idx_despesas) == 0:
+            raise ValueError("Não foi possível encontrar 'Receitas:' ou 'Despesas:' na coluna K do arquivo.")
+        
+        # Pega a primeira ocorrência (caso haja mais de uma)
+        linha_receitas = idx_receitas[0]
+        linha_despesas = idx_despesas[0]
+        
+        # Pega os valores da coluna 11 (índice 11 = coluna L)
+        total_revenue = convert_br_to_float(df.iloc[linha_receitas, 11])
+        total_expenses_raw = convert_br_to_float(df.iloc[linha_despesas, 11])
         
         # Agora lê novamente COM cabeçalho para processar despesas detalhadas
         df_with_header = pd.read_excel(file_path, sheet_name='Página 1', skiprows=1)
@@ -99,10 +111,11 @@ def process_excel(file_path):
         "share_ronaldo": shares['Ronaldo'],
         "share_reserva": shares['Reserva']
     }
+    
     # Categorização de despesas com GRUPOS
     expenses_data = []
     categories = {
-        'Despesas com Colaboradores': [
+        'Despesas com Pessoal': [
             'Salários',
             '13° Salário',
             'Férias',
@@ -172,7 +185,7 @@ def process_excel(file_path):
             'Tarifa Bancaria'
         ]
     }
-        
+    
     for category, subcategories in categories.items():
         rows = df_with_header[df_with_header['Descrição'].str.strip().isin(subcategories)]
         for _, row in rows.iterrows():
